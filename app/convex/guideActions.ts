@@ -1,14 +1,14 @@
 "use node";
 
-import { Agent, createTool } from "@convex-dev/agent";
+import { generateObject } from "ai";
 import { openai } from "@ai-sdk/openai";
-import { components, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import { action, internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { z } from "zod";
 import { estimateCost } from "./lib/tokenCost";
 
-// ─── Valid pages and selectors (enum-constrained for LLM reliability) ───────
+const GUIDE_MODEL = process.env.GUIDE_MODEL ?? "gpt-4.1-mini";
 
 const VALID_PAGES = [
   "/economy", "/budget", "/debt", "/government", "/parliament",
@@ -37,79 +37,6 @@ const TOOL_NAMES = [
   "search_egypt_investment_opportunities",
 ] as const;
 
-// ─── Tool 1: Navigate (with confirmation) ───────────────────────────────────
-
-const navigate = createTool({
-  description: "Propose navigating the user to a page. The frontend shows a confirmation button — the user decides whether to go.",
-  inputSchema: z.object({
-    href: z.enum(VALID_PAGES).describe("Page to navigate to"),
-    reason: z.string().describe("One sentence: why this page is relevant to what the user asked"),
-  }),
-  execute: async (_ctx, { href, reason }): Promise<string> => {
-    return JSON.stringify({ action: "navigate", href, reason });
-  },
-});
-
-// ─── Tool 2: Highlight (spotlight element on current page) ──────────────────
-
-const highlight = createTool({
-  description: "Highlight an element on the CURRENT page with a spotlight overlay and explanation popover. Use this when the user asks about something visible on the page they're already on. Do NOT navigate — just highlight.",
-  inputSchema: z.object({
-    selector: z.enum(ALL_SELECTORS).describe("The data-guide attribute value of the element to highlight"),
-    title: z.string().describe("Short title for the highlight popover"),
-    description: z.string().describe("What this element shows or how to use it"),
-  }),
-  execute: async (_ctx, { selector, title, description }): Promise<string> => {
-    return JSON.stringify({
-      action: "highlight",
-      selector: `[data-guide='${selector}']`,
-      title,
-      description,
-    });
-  },
-});
-
-// ─── Tool 3: Control Input (set values on tool pages, with Q&A) ─────────────
-
-const controlInput = createTool({
-  description: `Set input values on a tool page, or ask the user for missing information first.
-
-When you have the values: set needsInfo=false and provide inputs.
-When you need more info: set needsInfo=true and provide a question.
-
-Tool input schemas:
-- calculate_egypt_tax: {annualSalary: number}
-- simulate_egypt_investment: {capitalEgp: number, strategy: "conservative"|"balanced"|"aggressive"|"fixedIncome"|"egyptianGrowth", horizonYears: number}
-- compare_buy_vs_rent: {homePrice: number, monthlyRent: number, years: number}
-- search_egypt_investment_opportunities: {maxCapitalEgp: number}`,
-  inputSchema: z.object({
-    tool: z.enum(TOOL_NAMES).describe("Which tool to control"),
-    inputs: z.record(z.unknown()).optional().describe("Input values to set (when needsInfo is false)"),
-    needsInfo: z.boolean().describe("true = ask user a question first, false = set values now"),
-    question: z.string().optional().describe("Question to ask user (when needsInfo is true)"),
-  }),
-  execute: async (_ctx, { tool, inputs, needsInfo, question }): Promise<string> => {
-    if (needsInfo) {
-      return JSON.stringify({ action: "ask", question: question ?? "What value would you like to set?" });
-    }
-    // Map tool to its page
-    const toolPages: Record<string, string> = {
-      calculate_egypt_tax: "/tools/tax-calculator",
-      simulate_egypt_investment: "/tools/invest",
-      compare_buy_vs_rent: "/tools/buy-vs-rent",
-      search_egypt_investment_opportunities: "/tools/mashroaak",
-    };
-    return JSON.stringify({
-      action: "control",
-      tool,
-      inputs: inputs ?? {},
-      href: toolPages[tool] ?? "/",
-    });
-  },
-});
-
-// ─── Page context map (selectors + tools per page for system prompt) ─────────
-
 const PAGE_CONTEXT: Record<string, { selectors: string[]; tools: string[] }> = {
   "/tools/tax-calculator": { selectors: ["salary-input", "tax-summary", "tax-chart", "tax-categories"], tools: ["calculate_egypt_tax"] },
   "/tools/invest": { selectors: ["capital", "horizon", "allocation", "output"], tools: ["simulate_egypt_investment"] },
@@ -123,110 +50,153 @@ const PAGE_CONTEXT: Record<string, { selectors: string[]; tools: string[] }> = {
   "/constitution": { selectors: ["search", "articles-list"], tools: [] },
 };
 
-// ─── Agent Definition ───────────────────────────────────────────────────────
+const rawGuideActionSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("navigate"),
+    href: z.enum(VALID_PAGES),
+    reason: z.string().min(2).max(180),
+  }),
+  z.object({
+    action: z.literal("highlight"),
+    selector: z.enum(ALL_SELECTORS),
+    title: z.string().min(2).max(80),
+    description: z.string().min(2).max(220),
+  }),
+  z.object({
+    action: z.literal("control"),
+    tool: z.enum(TOOL_NAMES),
+    inputs: z.record(z.string(), z.unknown()),
+    href: z.enum(["/tools/tax-calculator", "/tools/buy-vs-rent", "/tools/invest", "/tools/mashroaak"]),
+  }),
+  z.object({
+    action: z.literal("ask"),
+    question: z.string().min(2).max(180),
+  }),
+]);
 
-export const guideAgent = new Agent(components.agent, {
-  name: "mizan-guide",
-  languageModel: openai("gpt-4.1-mini"),
-  instructions: `You are the Mizan Guide (دليل ميزان). You help users explore Egypt's government transparency platform.
-
-You have 3 tools. You can chain up to 3 in a single response for a smooth guided flow:
-
-1. navigate — Propose going to a different page. Shows a confirmation button.
-2. highlight — Spotlight an element on the CURRENT page with driver.js.
-3. controlInput — Set values on a calculator, or ask a question (needsInfo=true).
-
-FLOW PATTERNS (follow these exactly):
-
-When user wants to explore a tool (e.g. "I want to invest"):
-  Step 1: navigate to the tool page
-  Step 2: highlight the main input element
-  Step 3: controlInput with needsInfo=true to ask what value they want
-
-When user is already on a tool page and asks to use it:
-  Step 1: highlight the relevant input
-  Step 2: controlInput with needsInfo=true to ask for the value
-
-When user provides a specific value (e.g. "300000", "1 million"):
-  Step 1: controlInput with needsInfo=false and the value
-  Step 2: highlight the output/result section
-
-When user asks "what is this?" or about a visible element:
-  Step 1: highlight that element
-
-When user asks about a different page:
-  Step 1: navigate to that page
-
-Rules:
-- ALWAYS call at least one tool. Never respond with only text.
-- Keep text to 1 short sentence.
-- Respond in the same language the user writes in.`,
-  tools: { navigate, highlight, controlInput },
-  maxSteps: 3,
-  contextOptions: { recentMessages: 20 },
-  callSettings: { temperature: 0.3 },
-  usageHandler: async (ctx, { usage, model, provider, threadId, userId }) => {
-    const inTok = usage?.inputTokens ?? 0;
-    const outTok = usage?.outputTokens ?? 0;
-    const costUsd = estimateCost(model ?? "gpt-4.1-mini", inTok, outTok);
-    await ctx.runMutation(internal.guideAnalytics.logUsage, {
-      userId: userId ?? "anonymous",
-      threadId: threadId ?? "",
-      model: model ?? "gpt-4.1-mini",
-      provider: provider ?? "openai",
-      promptTokens: inTok,
-      completionTokens: outTok,
-      totalTokens: usage?.totalTokens ?? 0,
-      costUsd,
-      timestamp: Date.now(),
-    });
-  },
+const guideResponseSchema = z.object({
+  text: z.string().min(2).max(220),
+  actions: z.array(rawGuideActionSchema).min(1).max(3),
 });
 
-// ─── Actions ────────────────────────────────────────────────────────────────
+type RawGuideAction = z.infer<typeof rawGuideActionSchema>;
+
+type GuideAction =
+  | { action: "navigate"; href: string; reason: string }
+  | { action: "highlight"; selector: string; title: string; description: string }
+  | { action: "control"; tool: string; inputs: Record<string, unknown>; href: string }
+  | { action: "ask"; question: string };
+
+function normalizeGuideAction(action: RawGuideAction): GuideAction {
+  if (action.action === "highlight") {
+    return {
+      action: "highlight",
+      selector: `[data-guide='${action.selector}']`,
+      title: action.title,
+      description: action.description,
+    };
+  }
+
+  return action;
+}
+
+function buildContext(currentPage: string | undefined, lang: string | undefined): string {
+  const page = currentPage ?? "/";
+  const pageCtx = PAGE_CONTEXT[page];
+  const selectors = pageCtx?.selectors ?? [];
+  const tools = pageCtx?.tools ?? [];
+
+  return [
+    lang === "ar"
+      ? "User language: Arabic. Respond in Arabic."
+      : "User language: English. Respond in English.",
+    `Current page: ${page}`,
+    selectors.length > 0
+      ? `Available selectors on this page: ${selectors.join(", ")}`
+      : "No highlightable selectors on this page.",
+    tools.length > 0
+      ? `Available controllable tools on this page: ${tools.join(", ")}`
+      : "No controllable tools on this page.",
+  ].join("\n");
+}
+
+const GUIDE_SYSTEM = `You are the Mizan Guide. You help users explore Egypt's government transparency platform.
+
+Return a short visible reply and 1 to 3 typed UI actions. Never return hidden chain-of-thought.
+
+Action patterns:
+- If the user wants a different page, return navigate.
+- If the user asks about something visible on the current page, return highlight.
+- If the user wants to use a calculator/tool and you need a value, return ask.
+- If the user gave enough values for a tool, return control and then, when useful, highlight the output selector.
+
+Rules:
+- Use selectors only when they are available on the current page context.
+- Use control only for supported tool pages.
+- Keep text to one short sentence.
+- Match the user's language.`;
 
 export const createThread = action({
   args: {},
-  handler: async (ctx) => {
-    const { threadId } = await guideAgent.createThread(ctx, { title: "Guide Chat" });
-    return threadId;
+  handler: async () => {
+    return crypto.randomUUID();
   },
 });
 
 export const generateResponse = internalAction({
   args: {
     threadId: v.string(),
-    promptMessageId: v.string(),
+    prompt: v.string(),
     lang: v.optional(v.string()),
     currentPage: v.optional(v.string()),
   },
-  handler: async (ctx, { threadId, promptMessageId, lang, currentPage }) => {
-    const { thread } = await guideAgent.continueThread(ctx, { threadId });
+  handler: async (ctx, { threadId, prompt, lang, currentPage }) => {
+    try {
+      const result = await generateObject({
+        model: openai(GUIDE_MODEL),
+        schema: guideResponseSchema,
+        schemaName: "mizan_guide_response",
+        schemaDescription: "A short guide response plus deterministic UI actions.",
+        system: `${GUIDE_SYSTEM}\n\n${buildContext(currentPage, lang)}`,
+        prompt,
+        temperature: 0.3,
+        maxOutputTokens: 900,
+      });
 
-    // Build context-aware system message
-    const langLine = lang === "ar"
-      ? "User language: Arabic. Respond in Arabic."
-      : "User language: English. Respond in English.";
+      const actions = result.object.actions.map(normalizeGuideAction);
+      await ctx.runMutation(internal.guide.storeAssistantMessage, {
+        threadId,
+        text: result.object.text,
+        actions,
+      });
 
-    const pageCtx = currentPage ? PAGE_CONTEXT[currentPage] : undefined;
-    const pageLine = currentPage
-      ? `Current page: ${currentPage}`
-      : "Current page: / (home)";
-    const selectors = pageCtx?.selectors ?? [];
-    const tools = pageCtx?.tools ?? [];
-    const selectorsLine = selectors.length > 0
-      ? `Available selectors on this page: ${selectors.join(", ")}`
-      : "No highlightable selectors on this page.";
-    const toolsLine = tools.length > 0
-      ? `Available tools on this page: ${tools.join(", ")}`
-      : "No controllable tools on this page.";
-
-    const system = `${langLine}\n${pageLine}\n${selectorsLine}\n${toolsLine}`;
-
-    await thread.generateText({
-      promptMessageId,
-      system,
-      toolChoice: "required",
-    });
+      const inTok = result.usage.inputTokens ?? 0;
+      const outTok = result.usage.outputTokens ?? 0;
+      await ctx.runMutation(internal.guideAnalytics.logUsage, {
+        userId: "anonymous",
+        threadId,
+        model: GUIDE_MODEL,
+        provider: "openai",
+        promptTokens: inTok,
+        completionTokens: outTok,
+        totalTokens: result.usage.totalTokens ?? inTok + outTok,
+        costUsd: estimateCost(GUIDE_MODEL, inTok, outTok),
+        timestamp: Date.now(),
+      });
+    } catch (error) {
+      console.error("[guide] AI SDK response failed", error);
+      await ctx.runMutation(internal.guide.storeAssistantMessage, {
+        threadId,
+        text: lang === "ar"
+          ? "تعذر تشغيل المرشد الآن."
+          : "The guide could not respond right now.",
+        actions: [{
+          action: "ask",
+          question: lang === "ar"
+            ? "جرّب صياغة السؤال بشكل أقصر."
+            : "Try asking a shorter question.",
+        }],
+      });
+    }
   },
 });

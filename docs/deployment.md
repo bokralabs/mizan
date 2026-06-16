@@ -77,12 +77,11 @@
 
 ### Convex Components (convex.config.ts)
 
-The app registers two Convex components:
+The app registers one Convex component:
 
-- **`@convex-dev/agent`** -- powers the guide chat agent (`guideActions.ts`) and provides message storage, threading, and streaming
 - **`@convex-dev/rate-limiter`** -- enforces per-session rate limits on guide chat (1 msg/3s, ~10K tokens/hour)
 
-These are declared in `convex/convex.config.ts` via `app.use(agent)` and `app.use(rateLimiter)`.
+This is declared in `convex/convex.config.ts` via `app.use(rateLimiter)`. Guide chat message storage now uses the app's `guideMessages` table.
 
 ### External Dependencies (convex.json)
 

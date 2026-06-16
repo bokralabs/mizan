@@ -1,10 +1,10 @@
 "use node";
 
-import { Agent, createTool } from "@convex-dev/agent";
 import { createOpenAI } from "@ai-sdk/openai";
+import { generateObject } from "ai";
 import { z } from "zod";
-import { components, internal } from "./_generated/api";
-import { action, internalAction } from "./_generated/server";
+import { internal } from "./_generated/api";
+import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { estimateCost } from "./lib/tokenCost";
 
@@ -110,49 +110,6 @@ function assertDeepSeekConfigured(): void {
     throw new Error("DEEPSEEK_API_KEY is required in the Convex environment for Mizan generative UI chat.");
   }
 }
-
-const uiSpecSchema = z.object({
-  title: z.string(),
-  thinking: z.array(z.string()).max(4),
-  component: z.enum(["overview", "budget_bars", "debt_split", "civic_map", "source_audit"]),
-  summary: z.string(),
-  reportSteps: z.array(z.object({
-    label: z.string(),
-    value: z.string(),
-    note: z.string(),
-  })).min(2).max(5),
-  primaryAction: z.object({
-    label: z.string(),
-    href: z.enum(["/government", "/budget", "/debt", "/transparency", "/parliament", "/constitution", "/governorate"]),
-  }),
-  suggestions: z.array(z.string()).min(2).max(4),
-  i18n: z.object({
-    en: z.object({
-      title: z.string(),
-      thinking: z.array(z.string()).max(4),
-      summary: z.string(),
-      reportSteps: z.array(z.object({
-        label: z.string(),
-        value: z.string(),
-        note: z.string(),
-      })).min(2).max(5),
-      primaryActionLabel: z.string(),
-      suggestions: z.array(z.string()).min(2).max(4),
-    }),
-    ar: z.object({
-      title: z.string(),
-      thinking: z.array(z.string()).max(4),
-      summary: z.string(),
-      reportSteps: z.array(z.object({
-        label: z.string(),
-        value: z.string(),
-        note: z.string(),
-      })).min(2).max(5),
-      primaryActionLabel: z.string(),
-      suggestions: z.array(z.string()).min(2).max(4),
-    }),
-  }).describe("A clean translation pass for the generated UI. Always provide both English and Arabic."),
-});
 
 const gridBlockSchema = z.object({
   id: z.string().min(2).max(48).regex(/^[a-z0-9-]+$/),
@@ -682,62 +639,7 @@ function normalizeGridPlan(plan: UiGridPlan): UiGridPlan {
   };
 }
 
-const renderMizanUi = createTool({
-  description: "Return the UI component spec that should be rendered for the user's answer. Use this instead of plain text when answering.",
-  inputSchema: uiSpecSchema,
-  execute: async (_ctx, spec): Promise<string> => JSON.stringify(spec),
-});
-
-export const mizanChatAgent = new Agent(components.agent, {
-  name: "mizan-generative-ui-chat",
-  languageModel: deepseekChatModel,
-  instructions: `You are Mizan's generative UI chat agent.
-
-The user talks to you in a chat box. Your job is to answer by requesting a UI from the Mizan UI agent contract.
-
-Rules:
-- ALWAYS call render_mizan_ui exactly once.
-- Keep visible text short. The UI, charts, and report steps are the answer.
-- Fill the top-level fields in the application language named in the system message, even when the user prompt is written in another language.
-- Also fill i18n.en and i18n.ar for the same UI, using clean product language in both languages. Treat this as a translation-agent pass inside the UI contract.
-- Prefer charts and structured findings over prose. Summary must be at most 1 sentence.
-- reportSteps must read like an analyst walkthrough: Step label, key value, and short implication. Do not write paragraphs.
-- For Arabic, write polished product Arabic, not literal technical labels. Prefer: "أقرأ البيانات"، "أختار العرض"، "أركّب اللوحة"، "افتح التفاصيل". Avoid awkward terms like "يبني الواجهة" or "مكوّن".
-- Never invent data. Use only the DATA CONTEXT provided in the system message.
-- If data is missing, render source_audit and say what is missing.
-- "thinking" is user-visible progress, not hidden chain-of-thought. Use short factual steps. Arabic examples: "أقرأ أرقام الموازنة"، "أقارن الإيرادات بالمصروفات"، "أضيف المصدر". English examples: "Reading budget totals", "Choosing the debt view", "Attaching sources".
-- Choose component:
-  overview: broad first question or unclear ask
-  budget_bars: revenue, spending, deficit, fiscal pressure
-  debt_split: debt, external/domestic, GDP ratio
-  civic_map: government, parliament, governorates, constitution
-  source_audit: freshness, trust, source, pipeline questions`,
-  tools: { render_mizan_ui: renderMizanUi },
-  maxSteps: 2,
-  contextOptions: { recentMessages: 12 },
-  callSettings: { temperature: 0.2 },
-  usageHandler: async (ctx, { usage, model, provider, threadId, userId }) => {
-    const inTok = usage?.inputTokens ?? 0;
-    const outTok = usage?.outputTokens ?? 0;
-    const costUsd = estimateCost(model ?? DEEPSEEK_MODEL, inTok, outTok);
-    await ctx.runMutation(internal.guideAnalytics.logUsage, {
-      userId: userId ?? "anonymous",
-      threadId: threadId ?? "",
-      model: model ?? DEEPSEEK_MODEL,
-      provider: provider ?? "deepseek",
-      promptTokens: inTok,
-      completionTokens: outTok,
-      totalTokens: usage?.totalTokens ?? 0,
-      costUsd,
-      timestamp: Date.now(),
-    });
-  },
-});
-
-const mizanUiPlannerAgent = new Agent(components.agent, {
-  name: "mizan-grid-planner",
-  languageModel: deepseekChatModel,
-  instructions: `You are Mizan's UI planning agent.
+const UI_PLANNER_SYSTEM = `You are Mizan's UI planning agent.
 
 You do not write a chat answer. You return a typed grid plan that a deterministic React renderer can execute.
 
@@ -795,26 +697,7 @@ Intent routing:
 - government: ministries, parliament, governorates, constitution, who runs what.
 - sources: trust, source, freshness, audit, pipeline.
 - comparison: compare two or more domains.
-- overview: only when the user is genuinely broad or vague.`,
-  contextOptions: { recentMessages: 8 },
-  callSettings: { temperature: 0.35 },
-  usageHandler: async (ctx, { usage, model, provider, threadId, userId }) => {
-    const inTok = usage?.inputTokens ?? 0;
-    const outTok = usage?.outputTokens ?? 0;
-    const costUsd = estimateCost(model ?? DEEPSEEK_MODEL, inTok, outTok);
-    await ctx.runMutation(internal.guideAnalytics.logUsage, {
-      userId: userId ?? "anonymous",
-      threadId: threadId ?? "",
-      model: model ?? DEEPSEEK_MODEL,
-      provider: provider ?? "deepseek",
-      promptTokens: inTok,
-      completionTokens: outTok,
-      totalTokens: usage?.totalTokens ?? 0,
-      costUsd,
-      timestamp: Date.now(),
-    });
-  },
-});
+- overview: only when the user is genuinely broad or vague.`;
 
 export const planGrid = action({
   args: {
@@ -858,22 +741,31 @@ export const planGrid = action({
       JSON.stringify(args.history.slice(-8)),
     ].join("\n");
 
-    const result = await mizanUiPlannerAgent.generateObject(
-      ctx,
-      { userId: "anonymous" },
-      {
-        schema: uiGridPlanSchema,
-        schemaName: "mizan_ui_grid_plan",
-        schemaDescription: "A deterministic typed Mizan UI grid plan rendered by the app.",
-        experimental_repairText: ({ text }) => repairUiGridPlanText(text, args.lang, args.currentView),
-        system,
-        prompt: args.prompt,
-      },
-      {
-        contextOptions: { recentMessages: 0 },
-        storageOptions: { saveMessages: "none" },
-      },
-    );
+    const result = await generateObject({
+      model: deepseekChatModel,
+      schema: uiGridPlanSchema,
+      schemaName: "mizan_ui_grid_plan",
+      schemaDescription: "A deterministic typed Mizan UI grid plan rendered by the app.",
+      experimental_repairText: ({ text }) => repairUiGridPlanText(text, args.lang, args.currentView),
+      system: `${UI_PLANNER_SYSTEM}\n\n${system}`,
+      prompt: args.prompt,
+      temperature: 0.35,
+      maxOutputTokens: 3500,
+    });
+
+    const inTok = result.usage.inputTokens ?? 0;
+    const outTok = result.usage.outputTokens ?? 0;
+    await ctx.runMutation(internal.guideAnalytics.logUsage, {
+      userId: "anonymous",
+      threadId: "home-ui",
+      model: DEEPSEEK_MODEL,
+      provider: "deepseek",
+      promptTokens: inTok,
+      completionTokens: outTok,
+      totalTokens: result.usage.totalTokens ?? inTok + outTok,
+      costUsd: estimateCost(DEEPSEEK_MODEL, inTok, outTok),
+      timestamp: Date.now(),
+    });
 
     const normalized = {
       ...normalizeGridPlan(result.object),
@@ -891,50 +783,5 @@ export const planGrid = action({
       planner: "llm",
       model: DEEPSEEK_MODEL,
     };
-  },
-});
-
-export const createThread = action({
-  args: {},
-  handler: async (ctx) => {
-    const { threadId } = await mizanChatAgent.createThread(ctx, {
-      title: "Mizan Generative UI",
-    });
-    return threadId;
-  },
-});
-
-export const generateResponse = internalAction({
-  args: {
-    threadId: v.string(),
-    promptMessageId: v.string(),
-    prompt: v.string(),
-    lang: v.string(),
-  },
-  handler: async (ctx, args) => {
-    assertDeepSeekConfigured();
-
-    const stats = await ctx.runQuery(internal.uiData.getUiContext, {});
-    const system = [
-      args.lang === "ar"
-        ? "Application language: Arabic. Respond in Arabic even when the user's prompt is written in another language."
-        : "Application language: English. Respond in English even when the user's prompt is written in another language.",
-      "DATA CONTEXT:",
-      JSON.stringify(stats),
-    ].join("\n");
-
-    await mizanChatAgent.streamText(
-      ctx,
-      { threadId: args.threadId },
-      {
-        prompt: args.prompt,
-        promptMessageId: args.promptMessageId,
-        system,
-        toolChoice: "required",
-      },
-      {
-        saveStreamDeltas: { chunking: "word", throttleMs: 120 },
-      },
-    );
   },
 });

@@ -507,73 +507,10 @@ export function zodToToolSchema(
   description: string,
   schema: z.ZodType,
 ): { name: string; description: string; input_schema: Record<string, unknown> } {
-  // Use zod-to-json-schema if available, otherwise manual conversion
-  // For now, use Zod's built-in JSON schema generation via .describe()
-  const jsonSchema = zodToJsonSchema(schema);
+  const jsonSchema = z.toJSONSchema(schema) as Record<string, unknown>;
   return {
     name,
     description,
     input_schema: jsonSchema,
   };
-}
-
-/**
- * Recursively convert a Zod schema to JSON Schema.
- * Supports the subset of Zod types used in this file.
- */
-function zodToJsonSchema(schema: z.ZodType): Record<string, unknown> {
-  if (schema instanceof z.ZodObject) {
-    const shape = schema.shape as Record<string, z.ZodType>;
-    const properties: Record<string, unknown> = {};
-    const required: string[] = [];
-
-    for (const [key, value] of Object.entries(shape)) {
-      if (value instanceof z.ZodOptional) {
-        properties[key] = zodToJsonSchema(value.unwrap());
-      } else {
-        properties[key] = zodToJsonSchema(value);
-        required.push(key);
-      }
-    }
-
-    const result: Record<string, unknown> = { type: "object", properties };
-    if (required.length > 0) result.required = required;
-    result.additionalProperties = false;
-    return result;
-  }
-
-  if (schema instanceof z.ZodString) {
-    const result: Record<string, unknown> = { type: "string" };
-    if (schema.description) result.description = schema.description;
-    return result;
-  }
-
-  if (schema instanceof z.ZodNumber) {
-    const result: Record<string, unknown> = { type: "number" };
-    if (schema.description) result.description = schema.description;
-    return result;
-  }
-
-  if (schema instanceof z.ZodBoolean) {
-    return { type: "boolean" };
-  }
-
-  if (schema instanceof z.ZodEnum) {
-    return { type: "string", enum: schema.options };
-  }
-
-  if (schema instanceof z.ZodArray) {
-    return { type: "array", items: zodToJsonSchema(schema.element) };
-  }
-
-  if (schema instanceof z.ZodOptional) {
-    return zodToJsonSchema(schema.unwrap());
-  }
-
-  if (schema instanceof z.ZodRecord) {
-    return { type: "object", additionalProperties: zodToJsonSchema(schema.element) };
-  }
-
-  // Fallback
-  return { type: "string" };
 }

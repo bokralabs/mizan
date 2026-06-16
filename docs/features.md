@@ -32,11 +32,7 @@
 | 12-hour cron refresh | Active | `app/convex/crons.ts` | Calls `orchestrateRefresh` on a 12h interval |
 | Public `triggerRefresh` action | Active | `app/convex/agents/dataAgent.ts` | Public action for manual pipeline runs via CLI (`npx convex run agents/dataAgent:triggerRefresh`); schedules `orchestrateRefresh` |
 | Multi-provider LLM registry | Active | `app/convex/agents/providers/registry.ts` | Auto-detects available providers from env vars. Priority: xAI (Grok) > OpenAI > Anthropic > Google > OpenRouter |
-| xAI/Grok provider | Active | `app/convex/agents/providers/xai.ts` | Model: `grok-4-1-fast-reasoning`. Supports chat completions, function calling, and server-side web search via the xAI Responses API |
-| OpenAI provider | Active | `app/convex/agents/providers/openai.ts` | Default model: `gpt-4o-mini` |
-| Anthropic provider | Active | `app/convex/agents/providers/anthropic.ts` | Default model: `claude-haiku-4-5-20251001`. Supports server tools (`web_search`, `web_fetch`) |
-| Google provider | Active | `app/convex/agents/providers/google.ts` | Default model: `gemini-2.0-flash` |
-| OpenRouter provider | Active | `app/convex/agents/providers/openrouter.ts` | Default model: `meta-llama/llama-4-scout`. No server tool support |
+| AI SDK providers | Active | `app/convex/agents/providers/registry.ts` | xAI, OpenAI, Anthropic, Google, and OpenRouter are routed through Vercel AI SDK. xAI/Anthropic support provider-side web research tools |
 | Structured output schemas | Active | `app/convex/agents/schemas.ts` | Centralized Zod schemas for all LLM-extracted data categories: budget, government, parliament, economy, constitution, industry (IDA/GAFI), news, council votes, GitHub issue classification, governorate stats. Includes `zodToToolSchema()` for converting Zod to JSON Schema for tool_use |
 | LLM output verification | Active | `app/convex/agents/verify.ts` | `verifyLLMOutput()` validates all LLM responses against Zod schemas before writing to Convex. `parseAndVerify()` handles markdown fences and prose wrapping |
 | LLM Council | Active | `app/convex/agents/council.ts` | Multi-model data verification: all available providers vote (approve/reject/abstain) on proposed data changes. Sessions tracked in `councilSessions` and `councilVotes` tables |
@@ -50,11 +46,11 @@
 
 | Feature | Status | Backend | Notes |
 |---------|--------|---------|-------|
-| Guide Chat widget | Active | `app/src/components/guide-chat.tsx` | Desktop-only side panel (360px) that pushes app content. Powered by Convex Agent SDK |
-| Agent backend | Active | `app/convex/guideActions.ts` | Uses `@convex-dev/agent` with `openai("gpt-4.1-mini")`, `maxSteps: 3`, `temperature: 0.3` |
+| Guide Chat widget | Active | `app/src/components/guide-chat.tsx` | Desktop-only side panel (360px) that pushes app content. Powered by first-party Convex messages and Vercel AI SDK |
+| Agent backend | Active | `app/convex/guideActions.ts` | Uses Vercel AI SDK `generateObject` with `gpt-4.1-mini`, typed action cards, and `temperature: 0.3` |
 | Navigate tool | Active | `app/convex/guideActions.ts` | Proposes page navigation with a confirmation button. Constrained to 15 valid page paths |
 | Highlight tool | Active | `app/convex/guideActions.ts` | Spotlights an element using driver.js via `data-guide` attribute selectors. Constrained to 31 valid selector names |
-| ControlInput tool | Active | `app/convex/guideActions.ts` | Sets values on tool page calculators or asks the user a clarifying question first (`needsInfo` flag). Maps to 4 WebMCP tools |
+| Control action | Active | `app/convex/guideActions.ts` | Sets values on tool page calculators when inputs are known; otherwise returns an `ask` action for missing details |
 | Thread persistence | Active | `app/src/lib/guide-registry.ts` | Thread ID saved to localStorage, restored on page reload |
 | Pending actions | Active | `app/src/lib/guide-registry.ts`, `app/src/lib/use-guide-pending.ts` | Cross-page tool execution: saves action to localStorage, consumes on target page after navigation |
 | Preset prompts | Active | `app/src/lib/guide-workflows.ts` | 6 bilingual preset prompts: economy, government, taxes, investments, rights, data sourcing |
@@ -100,7 +96,7 @@
 
 | Feature | Status | Backend | Notes |
 |---------|--------|---------|-------|
-| Convex Agent SDK | Active | `app/convex/convex.config.ts` | `@convex-dev/agent` component for guide chat thread management and message streaming |
+| AI SDK guide backend | Active | `app/convex/guide.ts`, `app/convex/guideActions.ts` | First-party `guideMessages` storage plus Vercel AI SDK structured generation |
 | Rate limiter component | Active | `app/convex/convex.config.ts` | `@convex-dev/rate-limiter` component for guide chat spam prevention |
 | Token cost estimation | Active | `app/convex/lib/tokenCost.ts` | `estimateCost()` maps model names to per-token pricing for usage tracking |
 | Sanad source confidence | Active | Schema-wide | 5-level confidence system (1=official_gov, 2=intl_org, 3=news, 4=other, 5=derived) on all data tables via `sanadLevel` field |

@@ -171,16 +171,16 @@ Convex has no native `COUNT(*)`. The codebase uses `.collect()` on entire tables
 
 ### Current actual costs (April 2026)
 - **Pipeline API tokens used**: 16,161 (6 calls) — $0.04 total
-- **Guide chat**: gpt-4.1-mini via `@convex-dev/agent`, $20/month budget cap enforced by `guide.ts:checkMonthlyCost`
+- **Guide chat**: gpt-4.1-mini via Vercel AI SDK, $20/month budget cap enforced by `guide.ts:checkMonthlyCost`
 - **Infrastructure**: Convex $10/mo + DigitalOcean $12/mo = $22/mo
-- **Convex components**: `@convex-dev/agent` (guide chat threads + tool execution) and `@convex-dev/rate-limiter` (guide message throttling) — included in Convex plan, adds to function calls and action compute
+- **Convex components**: `@convex-dev/rate-limiter` (guide message throttling) — included in Convex plan, adds to function calls and action compute
 - **Total monthly burn**: ~$22/mo + API costs (pipeline + guide chat)
 
 ---
 
 ## Guide Chat — Cost Tracking
 
-The guide chat (`guide.ts`, `guideActions.ts`) uses `gpt-4.1-mini` via the `@convex-dev/agent` component with a hard $20/month budget cap.
+The guide chat (`guide.ts`, `guideActions.ts`) uses `gpt-4.1-mini` via Vercel AI SDK with a hard $20/month budget cap.
 
 ### How costs are tracked
 - Every agent response logs tokens and estimated cost to the `chatUsage` table via `guideAnalytics.ts:logUsage`

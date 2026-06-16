@@ -64,12 +64,8 @@ export function Footer() {
       <div className="py-4 border-t border-border flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">
           {t.footer_tagline}{" "}
-          {t.footer_builtBy}{" "}
-          <a href="https://egouda.xyz/" target="_blank" rel="noopener noreferrer" className="text-primary no-underline hover:underline">Essam Gouda</a>
-          {" & "}
-          <a href="https://www.linkedin.com/in/youssof-elessawy/" target="_blank" rel="noopener noreferrer" className="text-primary no-underline hover:underline">Youssof Elessawy</a>
-          {" & "}
-          <a href="https://claude.ai/code" target="_blank" rel="noopener noreferrer" className="text-primary no-underline hover:underline">Claude Code</a>
+          Build by{" "}
+          <a href="https://bokralabs.com" target="_blank" rel="noopener noreferrer" className="text-primary no-underline hover:underline">bokralabs.com</a>
         </p>
         <div className="flex items-center gap-3">
           <a

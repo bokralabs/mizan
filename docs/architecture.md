@@ -52,17 +52,17 @@ Mizan is structured in three layers: a Visual Layer that users interact with, a 
         v                                          |
 +---------------------------------------------------------------+
 |                      AGENTIC LAYER                            |
-|                    Convex Agents                              |
+|                    AI DATA + GUIDE LAYER                      |
 |                                                               |
 |  Orchestrator: dataAgent.ts (cron every 12h)                  |
 |  LLM Council: multi-model voting on data changes              |
 |  GitHub Agent: issue ingestion, spam filtering                |
-|  Guide Agent: Convex Agent SDK chat (GPT-4.1-mini)            |
+|  Guide Agent: AI SDK structured actions (GPT-4.1-mini)        |
 |  Validators: deterministic checks (sums, counts, ranges)      |
 |  Verifier: Zod-based LLM output validation (verify.ts)        |
-|  Providers: xAI Grok, OpenAI, Claude Haiku 4.5, Gemini,      |
+|  Providers: AI SDK registry for xAI, OpenAI, Claude, Gemini,  |
 |             OpenRouter (priority fallback chain)               |
-|  Components: @convex-dev/agent, @convex-dev/rate-limiter      |
+|  Components: @convex-dev/rate-limiter                         |
 +---------------------------------------------------------------+
         |
         | Fetches from external sources
@@ -102,7 +102,7 @@ Interactive tools:
 - `/tools/buy-vs-rent` -- Buy vs rent comparison with mortgage, installments, and cash options
 - `/tools/mashroaak` -- Investment opportunity explorer sourcing real projects from IDA and GAFI
 
-Guide chat: An AI-powered assistant (currently disabled in production) that helps users navigate the platform. Built with the Convex Agent SDK (`@convex-dev/agent`) and GPT-4.1-mini, it supports three actions: navigate (propose page transitions), highlight (spotlight UI elements via driver.js), and controlInput (set values on tool pages). The guide chat panel opens on the left side of the screen and pushes the main content via the `#mizan-app` wrapper div. Page tours are defined in `guide-workflows.ts` with per-page `PAGE_TOURS` step arrays.
+Guide chat: An AI-powered assistant (currently disabled in production) that helps users navigate the platform. Built with Vercel AI SDK structured generation and GPT-4.1-mini, it supports typed actions: navigate (propose page transitions), highlight (spotlight UI elements via driver.js), control (set values on tool pages), and ask (request missing input). The guide chat panel opens on the left side of the screen and pushes the main content via the `#mizan-app` wrapper div. Page tours are defined in `guide-workflows.ts` with per-page `PAGE_TOURS` step arrays.
 
 WebMCP integration: Pages register tools with the WebMCP `navigator.modelContext` API (W3C draft spec) so AI agents in browsers can discover and invoke them. The `useWebMCPTool` hook in `app/src/lib/webmcp.ts` handles feature detection, React Strict Mode guards, and cleanup. A static manifest at `app/public/.well-known/webmcp` declares available tools and multi-step flows. Global WebMCP tools (site overview, full data export, data health) are registered by the `WebMcpRegistration` component in `app/src/components/web-mcp.tsx`. Tool pages additionally register page-specific tools via `useWebMCPTool`, which also registers them in the guide chat's client-side tool registry (`app/src/lib/guide-registry.ts`).
 
@@ -154,14 +154,13 @@ These support the agentic layer's operations:
 
 ## Agentic Layer
 
-**Stack**: Convex actions (server-side), multi-provider LLM registry (xAI Grok, OpenAI, Anthropic Claude, Google Gemini, OpenRouter), Convex Agent SDK (`@convex-dev/agent`), `@convex-dev/rate-limiter`, pdf-parse (for constitution PDF extraction), Zod schemas + verifier, deterministic validators
+**Stack**: Convex actions (server-side), Vercel AI SDK multi-provider registry (xAI Grok, OpenAI, Anthropic Claude, Google Gemini, OpenRouter), `@convex-dev/rate-limiter`, pdf-parse (for constitution PDF extraction), Zod schemas + verifier, deterministic validators
 
 The Agentic Layer is responsible for keeping data fresh, processing community contributions, and powering the guide chat. It consists of six components:
 
 ### Convex Component Registration (convex.config.ts)
 
-The Convex app registers two components:
-- `@convex-dev/agent` -- powers the guide chat agent with thread management, message persistence, and tool execution
+The Convex app registers one component:
 - `@convex-dev/rate-limiter` -- enforces per-session rate limits on guide chat (1 message per 3 seconds, 10K tokens/hour)
 
 ### Orchestrator (dataAgent.ts)
@@ -190,12 +189,13 @@ A multi-model voting system for verifying community-submitted data corrections. 
 
 ### Guide Agent (guideActions.ts, guide.ts, guideAnalytics.ts)
 
-An interactive AI assistant built with the Convex Agent SDK. Uses GPT-4.1-mini with three tools:
+An interactive AI assistant built with Vercel AI SDK structured output. Uses GPT-4.1-mini with typed actions:
 - `navigate` -- proposes page navigation with a confirmation button
 - `highlight` -- spotlights a UI element on the current page using driver.js (targets `data-guide` attributes)
-- `controlInput` -- sets values on tool page inputs, or asks the user for missing information first
+- `control` -- sets values on tool page inputs
+- `ask` -- asks the user for missing information first
 
-The agent is context-aware: each request includes the user's current page, available `data-guide` selectors, and available WebMCP tools for that page. Thread management and message streaming use the Convex Agent SDK. Usage is tracked in the `chatUsage` table with a $20/month cost cap enforced by `guide.checkMonthlyCost`. Rate limiting via `@convex-dev/rate-limiter` prevents spam (1 message per 3 seconds, 10K token budget per hour).
+The guide is context-aware: each request includes the user's current page, available `data-guide` selectors, and available tool actions for that page. Message persistence uses the `guideMessages` table, while usage is tracked in the `chatUsage` table with a $20/month cost cap enforced by `guide.checkMonthlyCost`. Rate limiting via `@convex-dev/rate-limiter` prevents spam (1 message per 3 seconds, 10K token budget per hour).
 
 ### GitHub Agent
 
@@ -280,7 +280,7 @@ If data updates in Convex --> real-time push --> UI re-renders automatically
 User opens guide chat (Compass button, bottom-left)
     |
     v
-GuideChat component creates a thread via Convex Agent SDK
+GuideChat component creates a local thread id
     |
     v
 User sends message (or picks a preset)

@@ -294,13 +294,8 @@ Every provider implements the `LLMProvider` interface defined in `convex/agents/
 
 | File | Provider |
 |------|----------|
-| `convex/agents/providers/xai.ts` | xAI Grok (chat completions + Responses API) |
-| `convex/agents/providers/openai.ts` | OpenAI GPT (chat completions + function calling) |
-| `convex/agents/providers/anthropic.ts` | Anthropic Claude (messages API + tool_use + server tools) |
-| `convex/agents/providers/google.ts` | Google Gemini (generateContent + function calling) |
-| `convex/agents/providers/openrouter.ts` | OpenRouter (OpenAI-compatible API, any model) |
+| `convex/agents/providers/registry.ts` | Vercel AI SDK provider registry for xAI, OpenAI, Anthropic, Google, and OpenRouter |
 | `convex/agents/providers/types.ts` | Shared TypeScript interfaces |
-| `convex/agents/providers/registry.ts` | Auto-detection, routing, and convenience wrappers |
 | `convex/agents/providers/councilPrompt.ts` | Shared council evaluation prompt |
 
 ## Structured Output Schemas

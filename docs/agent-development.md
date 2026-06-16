@@ -114,26 +114,27 @@ All LLM responses MUST pass through one of these functions before being written 
 
 ## Guide Agent (Interactive Chat)
 
-Mizan includes an interactive guide agent that helps users explore the platform. It is built on the **Convex Agent SDK** (`@convex-dev/agent` v0.6.1) and uses **driver.js** for UI element highlighting.
+Mizan includes an interactive guide agent that helps users explore the platform. It uses **Vercel AI SDK** structured generation, first-party Convex message storage, and **driver.js** for UI element highlighting.
 
 ### Architecture
 
-- **Backend agent**: `convex/guideActions.ts` -- defines the `guideAgent` using `new Agent()` from `@convex-dev/agent`, with `gpt-4.1-mini` (via `@ai-sdk/openai`) as the language model
-- **Queries/mutations**: `convex/guide.ts` -- `sendMessage` (mutation that saves the user message and schedules the agent response), `listMessages` (paginated query using `listUIMessages`), `checkMonthlyCost` ($20/month budget cap)
+- **Backend agent**: `convex/guideActions.ts` -- uses Vercel AI SDK `generateObject` with `gpt-4.1-mini` (via `@ai-sdk/openai`) to emit typed guide actions
+- **Queries/mutations**: `convex/guide.ts` -- `sendMessage` (mutation that saves the user message and schedules the AI SDK response), `listMessages` (query over `guideMessages`), `checkMonthlyCost` ($20/month budget cap)
 - **Usage tracking**: `convex/guideAnalytics.ts` -- logs every agent call to the `chatUsage` table with token counts and cost estimates from `convex/lib/tokenCost.ts`
 - **Rate limiting**: `convex/rateLimits.ts` -- uses `@convex-dev/rate-limiter` to enforce 1 message per 3 seconds and a 10K tokens/hour budget per session
-- **Convex config**: `convex/convex.config.ts` -- registers the `@convex-dev/agent` and `@convex-dev/rate-limiter` components via `app.use()`
+- **Convex config**: `convex/convex.config.ts` -- registers `@convex-dev/rate-limiter`; guide chat storage is a normal app table
 - **Frontend**: `src/components/guide-chat.tsx` (chat UI with action parsing) and `src/components/guide-provider.tsx` (React context for pending highlights/inputs)
 
 ### Agent Tools
 
-The guide agent has 3 tools, each returning a JSON action that the frontend interprets:
+The guide agent returns typed JSON actions that the frontend interprets:
 
 1. **navigate** -- proposes navigating to one of the platform's pages (shows a confirmation button)
 2. **highlight** -- spotlights a `data-guide` element on the current page using driver.js
-3. **controlInput** -- sets input values on calculator/tool pages, or asks the user a follow-up question first (`needsInfo: true`)
+3. **control** -- sets input values on calculator/tool pages
+4. **ask** -- asks the user for missing tool input
 
-The agent is constrained to `maxSteps: 3` per response and `toolChoice: "required"` (it must always call at least one tool).
+The response schema requires at least one action and at most three actions per turn.
 
 ### Page Context
 
@@ -157,7 +158,7 @@ If you are a Codex session, Claude session, or any other AI agent working on thi
 9. `convex/agents/providers/registry.ts` -- Provider registry and auto-detection (reuse `callLLM*` wrappers, don't inline API calls)
 10. `convex/agents/schemas.ts` -- Centralized Zod schemas for all LLM-extracted data
 11. `convex/agents/verify.ts` -- `verifyLLMOutput()` and `parseAndVerify()` for validating LLM responses
-12. `convex/guideActions.ts` -- Guide agent (Convex Agent SDK + driver.js interactive chat)
+12. `convex/guideActions.ts` -- Guide agent (Vercel AI SDK + driver.js interactive chat)
 
 ### Data Layer
 13. `convex/dataRefresh.ts` -- All mutations for writing data (upsert patterns, audit logging)
@@ -170,7 +171,7 @@ If you are a Codex session, Claude session, or any other AI agent working on thi
 ### What You Need From Your Human
 - At least one LLM API key must be set as a Convex environment variable: **XAI_API_KEY** (highest priority), **OPENAI_API_KEY**, **ANTHROPIC_API_KEY**, **GOOGLE_AI_API_KEY**, or **OPENROUTER_API_KEY**
 - **GITHUB_TOKEN** must be set for GitHub issue processing
-- For the guide chat agent: **OPENAI_API_KEY** is required (uses `gpt-4.1-mini` via the Convex Agent SDK)
+- For the guide chat agent: **OPENAI_API_KEY** is required (uses `gpt-4.1-mini` via Vercel AI SDK)
 - Schema migrations need explicit approval (never auto-run destructive operations)
 - Government official changes need human confirmation (pipeline flags but doesn't write)
 - Production deployments need human approval (use `npx convex deploy` only when told to)

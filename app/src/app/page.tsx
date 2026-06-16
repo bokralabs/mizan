@@ -1,8 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAction, useQuery } from "convex/react";
+import { defineCatalog } from "@json-render/core";
+import { Renderer, StateProvider, ActionProvider, VisibilityProvider, defineRegistry } from "@json-render/react";
+import { schema as jsonRenderReactSchema } from "@json-render/react/schema";
 import {
   ArrowUp,
   ArrowUpRight,
@@ -17,9 +20,11 @@ import {
   SlidersHorizontal,
   Users,
 } from "lucide-react";
+import { z } from "zod";
 import { api } from "../../convex/_generated/api";
 import { AiPipelineStatus } from "@/components/ai-pipeline-status";
 import { SanadBadge } from "@/components/sanad-badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useLanguage } from "@/components/providers";
 import { fmtEGP, fmtUSD } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -222,6 +227,44 @@ const COPY = {
   },
 } as const;
 
+const mizanJsonCatalog = defineCatalog(jsonRenderReactSchema, {
+  components: {
+    BoardRoot: {
+      props: z.object({}),
+      description: "Root section for a generated Mizan data view.",
+    },
+    BoardHeader: {
+      props: z.object({}),
+      description: "Header with title, answer, and language toggle.",
+    },
+    BoardGrid: {
+      props: z.object({}),
+      description: "Responsive 12-column grid for generated data blocks.",
+    },
+    BoardBlock: {
+      props: z.object({
+        blockId: z.string(),
+      }),
+      description: "A generated Mizan block selected from the deterministic block registry.",
+    },
+    BoardSuggestions: {
+      props: z.object({}),
+      description: "Follow-up prompt suggestions for the current generated view.",
+    },
+  },
+  actions: {},
+});
+
+type MizanJsonSpec = {
+  root: string;
+  elements: Record<string, {
+    type: "BoardRoot" | "BoardHeader" | "BoardGrid" | "BoardBlock" | "BoardSuggestions";
+    props: Record<string, unknown>;
+    children?: string[];
+  }>;
+  state?: Record<string, unknown>;
+};
+
 const TURN_STORAGE_KEY = "mizan-ai-grid-turns-v1";
 
 function appHrefForMetric(metric: MetricKey | undefined): string {
@@ -249,7 +292,7 @@ function EvidenceLinks({
         href={appHref}
         className="inline-flex h-6 shrink-0 items-center gap-1 rounded-[6px] border border-border/70 bg-background/70 px-2 text-[0.65rem] font-semibold text-muted-foreground no-underline transition-colors hover:border-primary hover:text-primary"
       >
-        {lang === "ar" ? "بيانات" : "Data"}
+        {lang === "ar" ? "صفحة" : "Page"}
         <ArrowUpRight size={10} />
       </Link>
       {source && (
@@ -270,6 +313,12 @@ function EvidenceLinks({
 
 function moneyBillions(value: number): string {
   return fmtEGP(value * 1_000_000_000, { compact: true, decimals: 1 });
+}
+
+function chartHoverLabel(label: string, value: string, detail: string, lang: Lang): string {
+  return lang === "ar"
+    ? `${label}: ${value}. ${detail}`
+    : `${label}: ${value}. ${detail}`;
 }
 
 function investmentValue(
@@ -403,13 +452,59 @@ function blockIdentity(block: BoardBlock): string {
 
 function buildBoardNotation(board: Omit<Board, "notation">): string {
   return [
-    "mzn-grid-v1",
+    "json-render",
     `op=${board.operation}`,
     `intent=${board.intent}`,
     `lang=${board.lang}`,
     "grid=12",
     board.blocks.map((item) => `${item.kind}:${item.id}@${item.span}`).join(" "),
   ].join(" | ");
+}
+
+function boardToJsonSpec(board: Board, visibleBlockCount: number): MizanJsonSpec {
+  const visibleBlocks = board.blocks.slice(0, visibleBlockCount);
+  const blockIds = visibleBlocks.map((block) => `block-${block.id}`);
+  const elements: MizanJsonSpec["elements"] = {
+    root: {
+      type: "BoardRoot",
+      props: {},
+      children: ["header", "grid", "suggestions"],
+    },
+    header: {
+      type: "BoardHeader",
+      props: {},
+      children: [],
+    },
+    grid: {
+      type: "BoardGrid",
+      props: {},
+      children: blockIds,
+    },
+    suggestions: {
+      type: "BoardSuggestions",
+      props: {},
+      children: [],
+    },
+  };
+
+  for (const block of visibleBlocks) {
+    elements[`block-${block.id}`] = {
+      type: "BoardBlock",
+      props: { blockId: block.id },
+      children: [],
+    };
+  }
+
+  return {
+    root: "root",
+    elements,
+    state: {
+      intent: board.intent,
+      language: board.lang,
+      visibleBlockCount,
+      blockCount: board.blocks.length,
+    },
+  };
 }
 
 function hasFreshStartIntent(prompt: string): boolean {
@@ -606,23 +701,45 @@ function BudgetBars({ block, stats, lang }: { block: BoardBlock; stats: HomeStat
         <EvidenceLinks source={budget} appHref="/budget" lang={lang} />
       </div>
       <div className="space-y-5">
-        {rows.map((row, index) => (
-          <div key={row.label} style={{ animationDelay: `${index * 80}ms` }} className="animate-fade-up">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <span className="text-sm text-muted-foreground">{row.label}</span>
-              <span className="font-mono text-sm font-bold" dir="ltr">{budget ? moneyBillions(row.value) : "..."}</span>
+        {rows.map((row, index) => {
+          const relativePct = Math.max(5, (row.value / max) * 100);
+          const valueLabel = budget ? moneyBillions(row.value) : "...";
+          const detail = lang === "ar"
+            ? `${relativePct.toFixed(1)}% من أكبر بند ظاهر`
+            : `${relativePct.toFixed(1)}% of the largest visible line`;
+
+          return (
+            <div key={row.label} style={{ animationDelay: `${index * 80}ms` }} className="animate-fade-up">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <span className="text-sm text-muted-foreground">{row.label}</span>
+                <span className="font-mono text-sm font-bold" dir="ltr">{valueLabel}</span>
+              </div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div
+                    tabIndex={0}
+                    role="img"
+                    aria-label={chartHoverLabel(row.label, valueLabel, detail, lang)}
+                    className="h-3 cursor-help overflow-hidden rounded-[4px] bg-muted outline-none ring-primary/0 transition-shadow hover:ring-2 focus-visible:ring-2"
+                  >
+                    <div
+                      className={cn("h-full w-full rounded-[4px] transition-transform duration-700", row.color)}
+                      style={{
+                        transform: `scaleX(${relativePct / 100})`,
+                        transformOrigin: lang === "ar" ? "right center" : "left center",
+                      }}
+                    />
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-60 leading-5">
+                  <span className="font-semibold">{row.label}</span>
+                  <span className="ms-2 font-mono" dir="ltr">{valueLabel}</span>
+                  <span className="block text-muted">{detail}</span>
+                </TooltipContent>
+              </Tooltip>
             </div>
-            <div className="h-3 overflow-hidden rounded-[4px] bg-muted">
-              <div
-                className={cn("h-full w-full rounded-[4px] transition-transform duration-700", row.color)}
-                style={{
-                  transform: `scaleX(${Math.max(5, (row.value / max) * 100) / 100})`,
-                  transformOrigin: lang === "ar" ? "right center" : "left center",
-                }}
-              />
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -647,8 +764,43 @@ function DebtSplit({ block, stats, lang }: { block: BoardBlock; stats: HomeStats
       </div>
       <div className="h-5 overflow-hidden rounded-[4px] bg-muted">
         <div className="flex h-full">
-          <div className="bg-chart-2" style={{ width: `${externalPct}%` }} />
-          <div className="bg-chart-5" style={{ width: `${domesticPct}%` }} />
+          {[
+            {
+              label: c.external,
+              value: stats?.externalDebt ? fmtUSD(external, { compact: true, decimals: 1 }) : "...",
+              pct: externalPct,
+              color: "bg-chart-2",
+            },
+            {
+              label: c.domestic,
+              value: stats?.domesticDebt ? fmtEGP(domestic, { compact: true, decimals: 1 }) : "...",
+              pct: domesticPct,
+              color: "bg-chart-5",
+            },
+          ].map((segment) => {
+            const detail = lang === "ar"
+              ? `${segment.pct.toFixed(1)}% من الشريط`
+              : `${segment.pct.toFixed(1)}% of the bar`;
+
+            return (
+              <Tooltip key={segment.label}>
+                <TooltipTrigger asChild>
+                  <div
+                    tabIndex={0}
+                    role="img"
+                    aria-label={chartHoverLabel(segment.label, segment.value, detail, lang)}
+                    className={cn("h-full cursor-help outline-none transition-[filter] hover:brightness-125 focus-visible:brightness-125", segment.color)}
+                    style={{ width: `${segment.pct}%` }}
+                  />
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-56 leading-5">
+                  <span className="font-semibold">{segment.label}</span>
+                  <span className="ms-2 font-mono" dir="ltr">{segment.value}</span>
+                  <span className="block text-muted">{detail}</span>
+                </TooltipContent>
+              </Tooltip>
+            );
+          })}
         </div>
       </div>
       <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -1015,12 +1167,16 @@ function BoardCanvas({
   onToggleLanguage: () => void;
   registerBlock: (id: string, node: HTMLDivElement | null) => void;
 }) {
-  const visibleBlocks = board.blocks.slice(0, visibleBlockCount);
   const languageLabel = board.lang === "ar" ? "En" : "ع";
-
-  return (
-    <section className="workbench-panel relative overflow-hidden rounded-[8px] bg-card/90 p-4 animate-fade-up md:p-5">
-      <div className="relative">
+  const spec = useMemo(() => boardToJsonSpec(board, visibleBlockCount), [board, visibleBlockCount]);
+  const { registry } = useMemo(() => defineRegistry(mizanJsonCatalog, {
+    components: {
+      BoardRoot: ({ children }) => (
+        <section className="workbench-panel relative overflow-hidden rounded-[8px] bg-card/90 p-4 animate-fade-up md:p-5">
+          <div className="relative">{children}</div>
+        </section>
+      ),
+      BoardHeader: () => (
         <div className="border-b border-border/80 pb-4">
           <div className="min-w-0 space-y-4">
             <div className="flex flex-wrap items-center gap-2">
@@ -1044,24 +1200,31 @@ function BoardCanvas({
             </div>
           </div>
         </div>
-
+      ),
+      BoardGrid: ({ children }) => (
         <div className="space-y-4 py-5">
-          {visibleBlocks.length > 0 && (
+          {visibleBlockCount > 0 && (
             <div className="grid grid-cols-12 gap-3">
-              {visibleBlocks.map((item) => (
-                <BoardBlockView
-                  key={item.id}
-                  block={item}
-                  board={board}
-                  stats={stats}
-                  investmentDefaults={investmentDefaults}
-                  anchorRef={(node) => registerBlock(item.id, node)}
-                />
-              ))}
+              {children}
             </div>
           )}
         </div>
+      ),
+      BoardBlock: ({ props }) => {
+        const block = board.blocks.find((item) => item.id === props.blockId);
+        if (!block) return null;
 
+        return (
+          <BoardBlockView
+            block={block}
+            board={board}
+            stats={stats}
+            investmentDefaults={investmentDefaults}
+            anchorRef={(node) => registerBlock(block.id, node)}
+          />
+        );
+      },
+      BoardSuggestions: () => (
         <div className="flex flex-wrap gap-2 border-t border-border/60 pt-4">
           {board.suggestions.map((suggestion) => (
             <button
@@ -1074,8 +1237,18 @@ function BoardCanvas({
             </button>
           ))}
         </div>
-      </div>
-    </section>
+      ),
+    },
+  }), [board, investmentDefaults, languageLabel, onSuggestion, onToggleLanguage, registerBlock, stats, visibleBlockCount]);
+
+  return (
+    <StateProvider initialState={spec.state}>
+      <ActionProvider handlers={{}}>
+        <VisibilityProvider>
+          <Renderer spec={spec} registry={registry} />
+        </VisibilityProvider>
+      </ActionProvider>
+    </StateProvider>
   );
 }
 
@@ -1470,6 +1643,9 @@ function StartCanvas({
     <section className="mx-auto grid max-w-6xl gap-4">
       <div className="workbench-panel rounded-[8px] bg-card/90 p-5 md:p-6">
         <div className="min-w-0">
+          <span className="mb-4 inline-flex size-11 items-center justify-center rounded-[8px] border border-primary/35 bg-primary/12 text-primary">
+            <Scale size={24} strokeWidth={1.7} />
+          </span>
           <p className="workbench-label text-primary">{lang === "ar" ? "واجهة محادثة" : "Chat workspace"}</p>
           <MizanMotionTitle lang={lang} />
           <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground md:text-lg">{copy.subtitle}</p>
@@ -1721,7 +1897,7 @@ export default function HomePage() {
 
   return (
     <div className="mizan-workbench page-content min-h-screen" dir={pageDir}>
-      <section className="container-page min-h-[calc(100vh-8rem)] pb-16 pt-8">
+      <section className="container-page pb-8 pt-8">
         <div className={cn("mx-auto grid max-w-7xl gap-6", activeTurn ? "lg:grid-cols-[340px_minmax(0,1fr)]" : "grid-cols-1")}>
           {activeTurn && (
             <ChatRail

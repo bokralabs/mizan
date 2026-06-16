@@ -4,7 +4,6 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { useUIMessages, type UIMessage } from "@convex-dev/agent/react";
 import { useLanguage } from "@/components/providers";
 import { GUIDE_PRESETS, PAGE_TOURS, type LocalTourStep } from "@/lib/guide-workflows";
 import {
@@ -25,27 +24,12 @@ type GuideAction =
   | { action: "control"; tool: string; inputs: Record<string, unknown>; href: string }
   | { action: "ask"; question: string };
 
-// ─── Parse actions from message parts ───────────────────────────────────────
-
-function parseGuideActions(msg: UIMessage): GuideAction[] {
-  if (!msg.parts) return [];
-  const actions: GuideAction[] = [];
-  for (const part of msg.parts) {
-    const p = part as Record<string, unknown>;
-    if (
-      typeof p.type === "string" &&
-      p.type.startsWith("tool-") &&
-      p.state === "output-available" &&
-      p.output != null
-    ) {
-      try {
-        const val = typeof p.output === "string" ? JSON.parse(p.output) : p.output;
-        if (val?.action) actions.push(val as GuideAction);
-      } catch { /* skip */ }
-    }
-  }
-  return actions;
-}
+type GuideMessage = {
+  _id: string;
+  role: "user" | "assistant";
+  text: string;
+  actions?: GuideAction[];
+};
 
 // ─── Driver.js helper ───────────────────────────────────────────────────────
 
@@ -190,11 +174,11 @@ function AskCard({ question }: { question: string }) {
 // ─── Message Bubble ─────────────────────────────────────────────────────────
 
 function MessageBubble({ msg, isAr, currentPage, isMobile, onMinimize }: {
-  msg: UIMessage; isAr: boolean; currentPage: string; isMobile: boolean; onMinimize: () => void;
+  msg: GuideMessage; isAr: boolean; currentPage: string; isMobile: boolean; onMinimize: () => void;
 }) {
   const router = useRouter();
   const isUser = msg.role === "user";
-  const actions = isUser ? [] : parseGuideActions(msg);
+  const actions = isUser ? [] : msg.actions ?? [];
   return (
     <div className={`flex flex-col gap-1.5 ${isUser ? "items-end" : "items-start"}`}>
       {msg.text && (
@@ -226,7 +210,7 @@ function GuideChatContent({
   isAr: boolean;
   pathname: string;
   threadId: string | null;
-  messages: UIMessage[] | undefined;
+  messages: GuideMessage[] | undefined;
   isWaiting: boolean;
   isCreating: boolean;
   isOverBudget: boolean;
@@ -308,7 +292,7 @@ function GuideChatContent({
 
         {isOverBudget && <p className="text-xs text-muted-foreground text-center py-4">{t.guide_budgetReached}</p>}
 
-        {messages?.map((msg) => <MessageBubble key={msg.key} msg={msg} isAr={isAr} currentPage={pathname} isMobile={isMobile} onMinimize={onMinimize} />)}
+        {messages?.map((msg) => <MessageBubble key={msg._id} msg={msg} isAr={isAr} currentPage={pathname} isMobile={isMobile} onMinimize={onMinimize} />)}
 
         {(isWaiting || isCreating) && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground py-1">
@@ -351,14 +335,10 @@ export function GuideChat() {
   const sendMessage = useMutation(api.guide.sendMessage);
   const costCheck = useQuery(api.guide.checkMonthlyCost, {});
 
-  const { results: messages } = useUIMessages(
-    api.guide.listMessages,
-    threadId ? { threadId } : "skip",
-    { initialNumItems: 50 },
-  );
+  const messages = useQuery(api.guide.listMessages, threadId ? { threadId } : "skip");
 
   const isOverBudget = costCheck?.isOverBudget ?? false;
-  const isWaiting = messages?.some((m) => m.status === "pending");
+  const isWaiting = messages?.at(-1)?.role === "user";
   const localTourSteps = PAGE_TOURS[pathname] ?? null;
 
   // Restore threadId

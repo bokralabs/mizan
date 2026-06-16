@@ -1,6 +1,30 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+const guideAction = v.union(
+  v.object({
+    action: v.literal("navigate"),
+    href: v.string(),
+    reason: v.string(),
+  }),
+  v.object({
+    action: v.literal("highlight"),
+    selector: v.string(),
+    title: v.string(),
+    description: v.string(),
+  }),
+  v.object({
+    action: v.literal("control"),
+    tool: v.string(),
+    inputs: v.any(),
+    href: v.string(),
+  }),
+  v.object({
+    action: v.literal("ask"),
+    question: v.string(),
+  }),
+);
+
 export default defineSchema({
   // GOVERNMENT HIERARCHY
   officials: defineTable({
@@ -871,4 +895,13 @@ export default defineSchema({
     .index("by_timestamp", ["timestamp"])
     .index("by_threadId", ["threadId"])
     .index("by_userId", ["userId"]),
+
+  guideMessages: defineTable({
+    threadId: v.string(),
+    role: v.union(v.literal("user"), v.literal("assistant")),
+    text: v.string(),
+    actions: v.optional(v.array(guideAction)),
+    createdAt: v.number(),
+  })
+    .index("by_threadId_createdAt", ["threadId", "createdAt"]),
 });

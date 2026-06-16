@@ -1,15 +1,37 @@
 /**
- * Guide chat — queries and mutations (default Convex runtime).
- * Actions are in guideActions.ts ("use node").
+ * Guide chat storage and scheduling.
+ *
+ * The guide uses first-party Convex tables plus Vercel AI SDK calls in
+ * guideActions.ts. No external agent component is involved.
  */
 
-import { saveMessage, listUIMessages, vStreamArgs } from "@convex-dev/agent";
-import { components, internal } from "./_generated/api";
-import { mutation, query } from "./_generated/server";
-import { paginationOptsValidator } from "convex/server";
+import { internal } from "./_generated/api";
+import { internalMutation, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
-// ─── Send Message (mutation + scheduled action) ─────────────────────────────
+const guideAction = v.union(
+  v.object({
+    action: v.literal("navigate"),
+    href: v.string(),
+    reason: v.string(),
+  }),
+  v.object({
+    action: v.literal("highlight"),
+    selector: v.string(),
+    title: v.string(),
+    description: v.string(),
+  }),
+  v.object({
+    action: v.literal("control"),
+    tool: v.string(),
+    inputs: v.any(),
+    href: v.string(),
+  }),
+  v.object({
+    action: v.literal("ask"),
+    question: v.string(),
+  }),
+);
 
 export const sendMessage = mutation({
   args: {
@@ -19,35 +41,54 @@ export const sendMessage = mutation({
     currentPage: v.optional(v.string()),
   },
   handler: async (ctx, { threadId, prompt, lang, currentPage }) => {
-    const { messageId } = await saveMessage(ctx, components.agent, {
+    const messageId = await ctx.db.insert("guideMessages", {
       threadId,
-      prompt,
+      role: "user",
+      text: prompt,
+      createdAt: Date.now(),
     });
+
     await ctx.scheduler.runAfter(0, internal.guideActions.generateResponse, {
       threadId,
-      promptMessageId: messageId,
+      prompt,
       lang: lang ?? "en",
       currentPage: currentPage ?? "/",
     });
+
     return messageId;
   },
 });
 
-// ─── List Messages (with pagination) ────────────────────────────────────────
-
 export const listMessages = query({
   args: {
     threadId: v.string(),
-    paginationOpts: paginationOptsValidator,
-    streamArgs: v.optional(vStreamArgs),
   },
-  handler: async (ctx, args) => {
-    return await listUIMessages(ctx, components.agent, args);
+  handler: async (ctx, { threadId }) => {
+    return await ctx.db
+      .query("guideMessages")
+      .withIndex("by_threadId_createdAt", (q) => q.eq("threadId", threadId))
+      .take(100);
   },
 });
 
-// ─── Cost Check ($20/month cap) ─────────────────────────────────────────────
+export const storeAssistantMessage = internalMutation({
+  args: {
+    threadId: v.string(),
+    text: v.string(),
+    actions: v.array(guideAction),
+  },
+  handler: async (ctx, { threadId, text, actions }) => {
+    await ctx.db.insert("guideMessages", {
+      threadId,
+      role: "assistant",
+      text,
+      actions,
+      createdAt: Date.now(),
+    });
+  },
+});
 
+// Cost check ($20/month cap).
 export const checkMonthlyCost = query({
   args: {},
   handler: async (ctx) => {

@@ -1,6 +1,6 @@
 "use node";
 // AI-powered data orchestrator for Mizan.
-// Uses LLM APIs (via raw fetch — no SDK dependency) to parse and validate
+// Uses the Vercel AI SDK provider registry to parse and validate
 // government transparency data fetched from public sources.
 //
 // SETUP: Set at least one LLM API key (XAI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.) in your Convex dashboard
