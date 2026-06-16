@@ -5,6 +5,7 @@ import { z } from "zod";
 import { buildMizanCapabilityContext } from "@/lib/mizan-capability-catalog";
 import {
   MIZAN_GENERATIVE_CATALOG_PROMPT,
+  ensureInvestmentToolLaunch,
   langSchema,
   looseMizanJsonSpecSchema,
   makePromptFallbackSpec,
@@ -212,6 +213,7 @@ function hasDebtComparisonIntent(prompt: string): boolean {
 function hasInvestmentIntent(prompt: string): boolean {
   const normalized = prompt.toLowerCase();
   return /\b(invest|investment|portfolio|return|yield|treasury|t-?bill|certificate|cd|gold|egx|stock|stocks|real estate|mortgage|asset|assets|where should i put|where should i invest)\b/.test(normalized)
+    || /\b(test|simulate|scenario|project|projection|try|run)\b.*\b(egp|e£|years?|yrs?|k|m|million)\b/.test(normalized)
     || /استثمار|استثمر|استثمرت|محفظة|عائد|عوائد|ذهب|بورصة|أسهم|عقار|شهادات|أذون|خزانة|تمويل عقاري/.test(prompt);
 }
 
@@ -256,6 +258,7 @@ function isInvestmentSpec(spec: ReturnType<typeof normalizeMizanSpec>): boolean 
   const values = Object.values(spec.elements);
   const hasInvestmentPrimitive = values.some((item) => (
     item.type === "IndicatorStrip"
+    || item.type === "ToolLaunch"
     || (item.type === "SourceList" && item.props.sources.includes("investmentIndicators"))
     || (item.type === "ActionLinks" && item.props.links.some((link) => link.href === "/tools/invest" || link.href === "/tools/mashroaak"))
   ));
@@ -321,6 +324,7 @@ export async function POST(request: Request) {
     if (hasInvestmentIntent(body.prompt) && !isInvestmentSpec(responseSpec)) {
       responseSpec = makePromptFallbackSpec(body.lang, body.prompt);
     }
+    responseSpec = ensureInvestmentToolLaunch(responseSpec, body.prompt, body.lang);
 
     return NextResponse.json(responsePayloadForSpec(responseSpec, provider, modelName, result.usage));
   } catch {

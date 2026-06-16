@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { usePersistedState } from "@/lib/use-persisted-state";
 import { createPortal } from "react-dom";
 import { useQuery } from "convex/react";
@@ -149,6 +149,25 @@ const ALL_ASSETS: FlatAsset[] = ASSET_GROUPS.flatMap((g) =>
 
 const CAPITAL_STEPS = [50_000, 100_000, 250_000, 500_000, 1_000_000, 2_500_000, 5_000_000, 10_000_000, 25_000_000, 50_000_000];
 const QUICK_CAPITALS = [100_000, 500_000, 1_000_000, 5_000_000];
+
+function closestCapitalIndex(target: number): number {
+  let closest = 0;
+  for (let i = 0; i < CAPITAL_STEPS.length; i++) {
+    if (Math.abs(CAPITAL_STEPS[i] - target) < Math.abs(CAPITAL_STEPS[closest] - target)) closest = i;
+  }
+  return closest;
+}
+
+function numberParam(params: URLSearchParams, key: string): number | null {
+  const value = params.get(key);
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
 
 const PRESETS: Record<string, Preset> = {
   conservative: {
@@ -416,6 +435,7 @@ function RaceTooltip({ active, payload, label, isAr: _isAr, yearLabel }: RaceTip
 
 export default function InvestPage() {
   const { t, lang, dir } = useLanguage();
+  const [prefillQuery, setPrefillQuery] = useState("");
   const isAr = lang === "ar";
   // Translation helper for keys not yet in translations.ts — will be added in a follow-up
   
@@ -438,6 +458,7 @@ export default function InvestPage() {
   const [inflationPct, setInflationPct] = usePersistedState("invest-inflationPct", DEFAULT_INFLATION);
   const [depreciationPct, setDepreciationPct] = usePersistedState("invest-depreciationPct", DEFAULT_DEPRECIATION);
   const [showMethodology, setShowMethodology] = useState(false);
+  const appliedPrefillRef = useRef("");
   // User-adjustable yield per asset (dividends, rent). Defaults from asset definition.
   const defaultYieldOverrides: Record<string, number> = useMemo(() => {
     const m: Record<string, number> = {};
@@ -450,6 +471,10 @@ export default function InvestPage() {
   const handleYieldChange = useCallback((key: string, value: number) => {
     setYieldOverrides((prev) => ({ ...prev, [key]: value }));
   }, [setYieldOverrides]);
+
+  useEffect(() => {
+    setPrefillQuery(window.location.search.replace(/^\?/, ""));
+  }, []);
 
   const capital = CAPITAL_STEPS[capitalIdx] ?? 1_000_000;
 
@@ -565,6 +590,53 @@ export default function InvestPage() {
     ));
   }, [setAllocation, setActivePreset]);
 
+  useEffect(() => {
+    if (!prefillQuery || appliedPrefillRef.current === prefillQuery) return;
+
+    const params = new URLSearchParams(prefillQuery);
+    let applied = false;
+
+    const capitalEgp = numberParam(params, "capitalEgp");
+    if (capitalEgp !== null && capitalEgp > 0) {
+      setCapitalIdx(closestCapitalIndex(capitalEgp));
+      applied = true;
+    }
+
+    const horizonYears = numberParam(params, "horizonYears");
+    if (horizonYears !== null) {
+      setHorizon(Math.round(clamp(horizonYears, 1, 30)));
+      applied = true;
+    }
+
+    const strategy = params.get("strategy");
+    if (strategy && strategy in PRESETS) {
+      applyPreset(strategy);
+      applied = true;
+    }
+
+    const inflation = numberParam(params, "inflationPct");
+    if (inflation !== null) {
+      setInflationPct(clamp(inflation, 0, 100));
+      applied = true;
+    }
+
+    const depreciation = numberParam(params, "egpDepreciationPct");
+    if (depreciation !== null) {
+      setDepreciationPct(clamp(depreciation, 0, 100));
+      applied = true;
+    }
+
+    if (applied) {
+      appliedPrefillRef.current = prefillQuery;
+      const focus = params.get("focus");
+      if (focus) {
+        window.setTimeout(() => {
+          document.querySelector(`[data-guide="${focus}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 150);
+      }
+    }
+  }, [applyPreset, prefillQuery, setCapitalIdx, setDepreciationPct, setHorizon, setInflationPct]);
+
   // ─── WebMCP: expose investment simulator to AI agents ──────────────────────
   const investSchema = useMemo(() => ({
     type: "object" as const,
@@ -612,11 +684,7 @@ export default function InvestPage() {
       // Apply capital
       if (input.capitalEgp) {
         const target = Number(input.capitalEgp);
-        let closest = 0;
-        for (let i = 0; i < CAPITAL_STEPS.length; i++) {
-          if (Math.abs(CAPITAL_STEPS[i] - target) < Math.abs(CAPITAL_STEPS[closest] - target)) closest = i;
-        }
-        setCapitalIdx(closest);
+        setCapitalIdx(closestCapitalIndex(target));
       }
 
       // Apply horizon

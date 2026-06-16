@@ -178,7 +178,7 @@ function buildPromptMatch(prompt: string | undefined): PromptMatch {
         return matchesAny(text, [/\bgovernment\b/, /\bparliament\b/, /\bminister\b/, /\bconstitution\b/, /\bgovernorate\b/, /حكومة|برلمان|وزارة|دستور|محافظة/]);
       }
       if (domain.id === "investment-context") {
-        return matchesAny(text, [/\binvest\b/, /\binvestment\b/, /\bportfolio\b/, /\breturn\b/, /\byield\b/, /\btreasury\b/, /\bt-?bill\b/, /\bcertificate\b/, /\bcd\b/, /\bgold\b/, /\begx\b/, /\bstocks?\b/, /\breal estate\b/, /\bmortgage\b/, /\bassets?\b/, /\bwhere should i (put|invest)\b/, /استثمار|استثمر|محفظة|عائد|عوائد|ذهب|بورصة|أسهم|عقار|شهادات|أذون|خزانة|تمويل عقاري/]);
+        return matchesAny(text, [/\binvest\b/, /\binvestment\b/, /\bportfolio\b/, /\breturn\b/, /\byield\b/, /\btreasury\b/, /\bt-?bill\b/, /\bcertificate\b/, /\bcd\b/, /\bgold\b/, /\begx\b/, /\bstocks?\b/, /\breal estate\b/, /\bmortgage\b/, /\bassets?\b/, /\bwhere should i (put|invest)\b/, /\b(test|simulate|scenario|project|projection|try|run)\b.*\b(egp|e£|years?|yrs?|k|m|million)\b/, /استثمار|استثمر|محفظة|عائد|عوائد|ذهب|بورصة|أسهم|عقار|شهادات|أذون|خزانة|تمويل عقاري|اختبر|حاكي|سيناريو/]);
       }
       return false;
     })

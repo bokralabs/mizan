@@ -31,6 +31,7 @@ import {
   type InvestmentIndicatorKey,
   type Lang,
   type MetricKey,
+  type MizanElement,
   type MizanJsonSpec,
   type SourceKey,
 } from "@/lib/mizan-generative-spec";
@@ -356,6 +357,34 @@ function indicatorLabel(key: InvestmentIndicatorKey, lang: Lang): string {
     egypt_mortgage_rate: { en: "Mortgage rate", ar: "تمويل عقاري" },
   };
   return labels[key][lang];
+}
+
+function toolLaunchHref(props: Extract<MizanElement, { type: "ToolLaunch" }>["props"]): string {
+  const params = new URLSearchParams();
+  const { inputs } = props;
+  if (inputs.capitalEgp !== undefined) params.set("capitalEgp", String(inputs.capitalEgp));
+  if (inputs.horizonYears !== undefined) params.set("horizonYears", String(inputs.horizonYears));
+  if (inputs.strategy !== undefined) params.set("strategy", inputs.strategy);
+  if (inputs.inflationPct !== undefined) params.set("inflationPct", String(inputs.inflationPct));
+  if (inputs.egpDepreciationPct !== undefined) params.set("egpDepreciationPct", String(inputs.egpDepreciationPct));
+  params.set("focus", "output");
+  params.set("source", "mizan-chat");
+  return `${props.href}?${params.toString()}`;
+}
+
+function toolLaunchChips(props: Extract<MizanElement, { type: "ToolLaunch" }>["props"], lang: Lang): string[] {
+  const { inputs } = props;
+  const chips: string[] = [];
+  if (inputs.capitalEgp !== undefined) {
+    chips.push(fmtEGP(inputs.capitalEgp, { compact: true, decimals: 1 }));
+  }
+  if (inputs.horizonYears !== undefined) {
+    chips.push(lang === "ar" ? `${inputs.horizonYears} سنوات` : `${inputs.horizonYears} years`);
+  }
+  if (inputs.strategy !== undefined) {
+    chips.push(inputs.strategy.replace(/([a-z])([A-Z])/g, "$1 $2"));
+  }
+  return chips;
 }
 
 function MizanMotionTitle({ lang }: { lang: Lang }) {
@@ -750,6 +779,33 @@ function MizanRenderer({
           ))}
         </div>
       ),
+      ToolLaunch: ({ props }) => {
+        const chips = toolLaunchChips(props, lang);
+        return (
+          <div className="workbench-tile min-w-0 rounded-[8px] border border-primary/55 bg-primary/10 p-4 animate-fade-up xl:col-span-4">
+            <p className="text-sm font-bold text-primary">{props.title}</p>
+            <p className="mt-2 text-xs leading-6 text-muted-foreground">{props.description}</p>
+            {chips.length > 0 && (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {chips.map((chip) => (
+                  <span key={chip} className="rounded-[6px] border border-primary/30 bg-background/70 px-2 py-1 text-[0.65rem] font-semibold text-primary">
+                    {chip}
+                  </span>
+                ))}
+              </div>
+            )}
+            <Link
+              href={toolLaunchHref(props)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-4 inline-flex items-center gap-2 rounded-[6px] border border-primary bg-primary px-3 py-2 text-xs font-bold text-primary-foreground no-underline transition-opacity hover:opacity-90"
+            >
+              {props.cta}
+              <ArrowUpRight size={13} />
+            </Link>
+          </div>
+        );
+      },
       Suggestions: ({ props }) => (
         <div className="mt-5 flex flex-wrap gap-2 border-t border-border/60 pt-4">
           {props.prompts.map((suggestion) => (
