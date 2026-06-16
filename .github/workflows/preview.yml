@@ -39,7 +39,6 @@ jobs:
         with:
           deploy_pr_preview: "true"
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-          app_name: mizan
           app_spec_location: .do/app.yaml
       - name: Comment preview URL on PR
         if: steps.deploy.outputs.url
