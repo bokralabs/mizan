@@ -9,7 +9,6 @@ import { schema as jsonRenderReactSchema } from "@json-render/react/schema";
 import {
   ArrowUp,
   ArrowUpRight,
-  BarChart3,
   Building2,
   Calculator,
   ExternalLink,
@@ -17,7 +16,6 @@ import {
   MessageSquareText,
   RotateCcw,
   Scale,
-  SlidersHorizontal,
   Users,
 } from "lucide-react";
 import { z } from "zod";
@@ -72,8 +70,6 @@ type InvestmentDefaults = Partial<Record<InvestmentIndicatorKey, {
   sanadLevel: number;
   sourceUrl?: string;
 }>>;
-
-type ScenarioMode = "fixedIncome" | "balanced" | "growth";
 
 type BoardBlock = {
   id: string;
@@ -156,7 +152,7 @@ const COPY = {
   en: {
     title: "Mizan",
     subtitle: "Ask about Egypt's public data.",
-    placeholder: "Ask about debt, budget, government, sources, or scenarios...",
+    placeholder: "Ask about debt, budget, government, or sources...",
     reset: "Reset",
     history: "History",
     plan: "Plan",
@@ -319,56 +315,6 @@ function chartHoverLabel(label: string, value: string, detail: string, lang: Lan
   return lang === "ar"
     ? `${label}: ${value}. ${detail}`
     : `${label}: ${value}. ${detail}`;
-}
-
-function investmentValue(
-  investmentDefaults: InvestmentDefaults | undefined,
-  key: InvestmentIndicatorKey,
-  fallback: number,
-): number {
-  return investmentDefaults?.[key]?.value ?? fallback;
-}
-
-function scenarioAnnualRate(
-  mode: ScenarioMode,
-  investmentDefaults: InvestmentDefaults | undefined,
-): number {
-  const tBills = investmentValue(investmentDefaults, "egypt_tbill_rate", 24);
-  const cds = investmentValue(investmentDefaults, "cbe_cd_rate", 18);
-  const gold = investmentValue(investmentDefaults, "gold_annual_return", 18);
-  const realEstate = investmentValue(investmentDefaults, "egypt_real_estate_return", 16);
-  const egx = investmentValue(investmentDefaults, "egx30_annual_return", 22);
-
-  if (mode === "fixedIncome") return Math.max(tBills, cds);
-  if (mode === "growth") return egx;
-  return (tBills * 0.35) + (cds * 0.25) + (gold * 0.2) + (realEstate * 0.1) + (egx * 0.1);
-}
-
-function scenarioModeLabel(mode: ScenarioMode, lang: Lang): string {
-  const labels: Record<ScenarioMode, { en: string; ar: string }> = {
-    fixedIncome: { en: "Fixed income", ar: "دخل ثابت" },
-    balanced: { en: "Balanced", ar: "متوازن" },
-    growth: { en: "Growth", ar: "نمو" },
-  };
-  return labels[mode][lang];
-}
-
-function scenarioPrompt({
-  capital,
-  horizon,
-  mode,
-  lang,
-}: {
-  capital: number;
-  horizon: number;
-  mode: ScenarioMode;
-  lang: Lang;
-}): string {
-  const compactCapital = Math.round(capital).toLocaleString("en-US");
-  if (lang === "ar") {
-    return `اختبر سيناريو ${scenarioModeLabel(mode, "ar")} لمبلغ ${compactCapital} جنيه لمدة ${horizon} سنوات.`;
-  }
-  return `Test a ${scenarioModeLabel(mode, "en").toLowerCase()} scenario for EGP ${compactCapital} over ${horizon} years.`;
 }
 
 function turnStatusLabel(turn: Turn, lang: Lang): string {
@@ -1070,11 +1016,11 @@ function FindingSteps({ block, board, stats }: { block: BoardBlock; board: Board
       return lang === "ar"
         ? [
             { label: "حدد الهدف", value: "1", note: "سيولة قصيرة، حماية من التضخم، أو أصل طويل الأجل؟ الإجابة تغير الواجهة المناسبة." },
-            { label: "اختبر السيناريو", value: "2", note: "استخدم المحاكي لمقارنة نفس المبلغ عبر أكثر من أصل بدل نصيحة عامة." },
+            { label: "قارن الفرضيات", value: "2", note: "استخدم المحاكي لمقارنة نفس المبلغ عبر أكثر من أصل بدل نصيحة عامة." },
           ]
         : [
             { label: "Define the goal", value: "1", note: "Short-term liquidity, inflation hedge, or long-term asset? The answer changes the right view." },
-            { label: "Run a scenario", value: "2", note: "Use the simulator to compare the same amount across assets instead of taking generic advice." },
+            { label: "Compare assumptions", value: "2", note: "Use the simulator to compare the same amount across assets instead of taking generic advice." },
           ];
     }
     if (board.intent === "debt") {
@@ -1155,6 +1101,7 @@ function BoardCanvas({
   stats,
   investmentDefaults,
   visibleBlockCount,
+  disabled,
   onSuggestion,
   onToggleLanguage,
   registerBlock,
@@ -1163,6 +1110,7 @@ function BoardCanvas({
   stats: HomeStats | undefined;
   investmentDefaults: InvestmentDefaults | undefined;
   visibleBlockCount: number;
+  disabled: boolean;
   onSuggestion: (prompt: string) => void;
   onToggleLanguage: () => void;
   registerBlock: (id: string, node: HTMLDivElement | null) => void;
@@ -1186,7 +1134,8 @@ function BoardCanvas({
               <button
                 type="button"
                 onClick={onToggleLanguage}
-                className="inline-flex h-8 min-w-8 items-center justify-center rounded-[6px] border border-border bg-background/80 px-3 text-xs font-bold text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+                disabled={disabled}
+                className="inline-flex h-8 min-w-8 items-center justify-center rounded-[6px] border border-border bg-background/80 px-3 text-xs font-bold text-muted-foreground transition-colors hover:border-primary hover:text-primary disabled:pointer-events-none disabled:opacity-40"
                 aria-label={board.lang === "ar" ? "Switch to English" : "Switch to Arabic"}
               >
                 {languageLabel}
@@ -1231,7 +1180,8 @@ function BoardCanvas({
               key={suggestion}
               type="button"
               onClick={() => onSuggestion(suggestion)}
-              className="rounded-[6px] border border-border/70 bg-background/80 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+              disabled={disabled}
+              className="rounded-[6px] border border-border/70 bg-background/80 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-primary disabled:pointer-events-none disabled:opacity-40"
             >
               {suggestion}
             </button>
@@ -1239,7 +1189,7 @@ function BoardCanvas({
         </div>
       ),
     },
-  }), [board, investmentDefaults, languageLabel, onSuggestion, onToggleLanguage, registerBlock, stats, visibleBlockCount]);
+  }), [board, disabled, investmentDefaults, languageLabel, onSuggestion, onToggleLanguage, registerBlock, stats, visibleBlockCount]);
 
   return (
     <StateProvider initialState={spec.state}>
@@ -1252,164 +1202,24 @@ function BoardCanvas({
   );
 }
 
-function shouldRenderChatTool(board: Board | null): boolean {
-  if (!board) return false;
-  return board.intent === "investment"
-    || board.blocks.some((block) => block.kind === "toolLauncher" || block.kind === "investmentLens" || block.kind === "indicatorStrip");
-}
-
-function ChatScenarioTool({
-  lang,
-  investmentDefaults,
-  onUseScenario,
-}: {
-  lang: Lang;
-  investmentDefaults: InvestmentDefaults | undefined;
-  onUseScenario: (prompt: string) => void;
-}) {
-  const [capital, setCapital] = useState(250_000);
-  const [horizon, setHorizon] = useState(5);
-  const [mode, setMode] = useState<ScenarioMode>("balanced");
-  const annualRate = scenarioAnnualRate(mode, investmentDefaults);
-  const inflation = investmentValue(investmentDefaults, "inflation", 18);
-  const exchangeRate = investmentValue(investmentDefaults, "exchange_rate", 50);
-  const nominal = capital * Math.pow(1 + annualRate / 100, horizon);
-  const real = nominal / Math.pow(1 + inflation / 100, horizon);
-  const usdEquivalent = exchangeRate > 0 ? nominal / exchangeRate : null;
-  const maxValue = Math.max(capital, nominal, real, 1);
-  const rows = [
-    { label: lang === "ar" ? "رأس المال" : "Capital", value: capital, tone: "bg-muted-foreground" },
-    { label: lang === "ar" ? "اسمي" : "Nominal", value: nominal, tone: "bg-primary" },
-    { label: lang === "ar" ? "بعد التضخم" : "Real", value: real, tone: "bg-chart-3" },
-  ];
-
-  return (
-    <div className="rounded-[8px] border border-primary/70 bg-primary/10 p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="workbench-label inline-flex items-center gap-2 text-primary">
-            <SlidersHorizontal size={13} />
-            {lang === "ar" ? "أداة سيناريو" : "Scenario tool"}
-          </p>
-          <p className="mt-2 text-sm font-semibold leading-5">
-            {lang === "ar" ? "اختبر الفرضيات داخل المحادثة." : "Tune assumptions inside the chat."}
-          </p>
-        </div>
-        <BarChart3 size={17} className="mt-1 text-primary" />
-      </div>
-
-      <div className="mt-3 grid gap-3">
-        <label className="grid gap-1.5">
-          <span className="text-[0.68rem] font-semibold text-muted-foreground">
-            {lang === "ar" ? "المبلغ بالجنيه" : "Capital in EGP"}
-          </span>
-          <input
-            type="number"
-            min={10_000}
-            step={10_000}
-            value={capital}
-            onChange={(event) => setCapital(Math.max(0, Number(event.target.value) || 0))}
-            className="h-9 rounded-[6px] border border-border/70 bg-background/80 px-2 font-mono text-xs outline-none focus:border-primary"
-            dir="ltr"
-          />
-        </label>
-
-        <label className="grid gap-1.5">
-          <span className="flex items-center justify-between gap-2 text-[0.68rem] font-semibold text-muted-foreground">
-            <span>{lang === "ar" ? "المدة" : "Horizon"}</span>
-            <span className="font-mono text-foreground" dir="ltr">{horizon}y</span>
-          </span>
-          <input
-            type="range"
-            min={1}
-            max={15}
-            value={horizon}
-            onChange={(event) => setHorizon(Number(event.target.value))}
-            className="accent-primary"
-          />
-        </label>
-
-        <div className="grid grid-cols-3 gap-1.5">
-          {(["fixedIncome", "balanced", "growth"] satisfies ScenarioMode[]).map((item) => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => setMode(item)}
-              className="rounded-[6px] border border-border/70 bg-background/70 px-2 py-1.5 text-[0.68rem] font-semibold text-muted-foreground transition-colors data-[active=true]:border-primary data-[active=true]:bg-primary data-[active=true]:text-primary-foreground"
-              data-active={mode === item}
-            >
-              {scenarioModeLabel(item, lang)}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-3 rounded-[6px] border border-border/60 bg-background/70 p-3">
-        <div className="flex items-center justify-between gap-3">
-          <span className="workbench-label text-muted-foreground">
-            {lang === "ar" ? "معدل الفرضية" : "Assumed rate"}
-          </span>
-          <span className="font-mono text-sm font-bold" dir="ltr">{annualRate.toFixed(1)}%</span>
-        </div>
-        <div className="mt-3 grid gap-2">
-          {rows.map((row) => (
-            <div key={row.label} className="grid gap-1.5">
-              <div className="flex items-center justify-between gap-2 text-[0.68rem]">
-                <span className="text-muted-foreground">{row.label}</span>
-                <span className="font-mono font-semibold" dir="ltr">{fmtEGP(row.value, { compact: true, decimals: 1 })}</span>
-              </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                <div
-                  className={cn("h-full w-full origin-left rounded-full", row.tone)}
-                  style={{
-                    transform: `scaleX(${Math.max(0.04, Math.min(row.value / maxValue, 1))})`,
-                    transformOrigin: lang === "ar" ? "right center" : "left center",
-                  }}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-        {usdEquivalent ? (
-          <p className="mt-3 text-[0.68rem] text-muted-foreground">
-            {lang === "ar" ? "ما يعادل تقريبا" : "Approx. USD equivalent"}{" "}
-            <span className="font-mono text-foreground" dir="ltr">{fmtUSD(usdEquivalent, { compact: true, decimals: 1 })}</span>
-          </p>
-        ) : null}
-      </div>
-
-      <button
-        type="button"
-        onClick={() => onUseScenario(scenarioPrompt({ capital, horizon, mode, lang }))}
-        className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-[6px] border border-primary bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground"
-      >
-        <Calculator size={14} />
-        {lang === "ar" ? "اسأل بهذا السيناريو" : "Ask with this scenario"}
-      </button>
-    </div>
-  );
-}
-
 function ChatRail({
   turns,
   input,
   lang,
-  investmentDefaults,
+  disabled,
   activeTurnId,
   onInput,
   onSubmit,
-  onUseScenario,
   onReset,
   onSelectTurn,
 }: {
   turns: Turn[];
   input: string;
   lang: Lang;
-  investmentDefaults: InvestmentDefaults | undefined;
+  disabled: boolean;
   activeTurnId: string | null;
   onInput: (value: string) => void;
   onSubmit: () => void;
-  onUseScenario: (prompt: string) => void;
   onReset: () => void;
   onSelectTurn: (turnId: string) => void;
 }) {
@@ -1430,7 +1240,12 @@ function ChatRail({
             <p className="workbench-label text-primary">Mizan</p>
             <p className="text-xs text-muted-foreground">{lang === "ar" ? "محادثة حية" : "Live chat"}</p>
           </div>
-          <button type="button" onClick={onReset} className="inline-flex items-center gap-1.5 rounded-[6px] border border-border/60 bg-card px-2.5 py-1.5 text-xs font-semibold text-muted-foreground hover:border-primary hover:text-primary">
+          <button
+            type="button"
+            onClick={onReset}
+            disabled={disabled}
+            className="inline-flex items-center gap-1.5 rounded-[6px] border border-border/60 bg-card px-2.5 py-1.5 text-xs font-semibold text-muted-foreground hover:border-primary hover:text-primary disabled:pointer-events-none disabled:opacity-40"
+          >
             <RotateCcw size={12} />
             {copy.reset}
           </button>
@@ -1471,13 +1286,6 @@ function ChatRail({
                     <span>{blockCountLabel(blockCount, lang)}</span>
                   </div>
                 </button>
-                {isActiveTurn && shouldRenderChatTool(turn.board) && (
-                  <ChatScenarioTool
-                    lang={lang}
-                    investmentDefaults={investmentDefaults}
-                    onUseScenario={onUseScenario}
-                  />
-                )}
               </div>
             );
           })}
@@ -1500,9 +1308,10 @@ function ChatRail({
             value={input}
             onChange={(event) => onInput(event.target.value)}
             placeholder={copy.placeholder}
+            disabled={disabled}
             className="min-h-10 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
           />
-          <button type="submit" className="inline-flex h-10 w-10 items-center justify-center rounded-[6px] border border-primary bg-primary text-primary-foreground disabled:opacity-40" disabled={!input.trim()}>
+          <button type="submit" className="inline-flex h-10 w-10 items-center justify-center rounded-[6px] border border-primary bg-primary text-primary-foreground disabled:pointer-events-none disabled:opacity-40" disabled={disabled || !input.trim()}>
             <ArrowUp size={16} />
           </button>
         </form>
@@ -1549,11 +1358,13 @@ function PlanningCanvas({ turn, lang }: { turn: Turn; lang: Lang }) {
 function PromptBox({
   input,
   lang,
+  disabled,
   onInput,
   onSubmit,
 }: {
   input: string;
   lang: Lang;
+  disabled: boolean;
   onInput: (value: string) => void;
   onSubmit: () => void;
 }) {
@@ -1572,9 +1383,10 @@ function PromptBox({
         value={input}
         onChange={(event) => onInput(event.target.value)}
         placeholder={copy.placeholder}
+        disabled={disabled}
         className="min-h-11 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
       />
-      <button type="submit" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[6px] border border-primary bg-primary text-primary-foreground disabled:opacity-40" disabled={!input.trim()}>
+      <button type="submit" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[6px] border border-primary bg-primary text-primary-foreground disabled:pointer-events-none disabled:opacity-40" disabled={disabled || !input.trim()}>
         <ArrowUp size={17} />
       </button>
     </form>
@@ -1602,6 +1414,7 @@ function StartCanvas({
   input,
   lang,
   stats,
+  disabled,
   onInput,
   onSubmit,
   onExample,
@@ -1609,6 +1422,7 @@ function StartCanvas({
   input: string;
   lang: Lang;
   stats: HomeStats | undefined;
+  disabled: boolean;
   onInput: (value: string) => void;
   onSubmit: () => void;
   onExample: (prompt: string) => void;
@@ -1652,7 +1466,7 @@ function StartCanvas({
         </div>
 
         <div className="mt-6">
-          <PromptBox input={input} lang={lang} onInput={onInput} onSubmit={onSubmit} />
+          <PromptBox input={input} lang={lang} disabled={disabled} onInput={onInput} onSubmit={onSubmit} />
         </div>
 
         <div className="mt-3 flex flex-wrap gap-2">
@@ -1661,7 +1475,8 @@ function StartCanvas({
               key={example}
               type="button"
               onClick={() => onExample(example)}
-              className="inline-flex items-center gap-2 rounded-[6px] border border-border/70 bg-background/80 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+              disabled={disabled}
+              className="inline-flex items-center gap-2 rounded-[6px] border border-border/70 bg-background/80 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-primary disabled:pointer-events-none disabled:opacity-40"
             >
               <MessageSquareText size={13} />
               {example}
@@ -1704,12 +1519,16 @@ export default function HomePage() {
   const [renderPhase, setRenderPhase] = useState<RenderPhase>("idle");
   const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const workspaceBoardRef = useRef<Board | null>(null);
+  const interactionLockedRef = useRef(false);
   const revealFromRef = useRef(0);
   const activeTurn = (activeTurnId ? turns.find((turn) => turn.id === activeTurnId) : null) ?? turns.at(-1) ?? null;
   const activeBoard = workspaceBoard;
   const lang = appLang;
   const pageDir = lang === "ar" ? "rtl" : "ltr";
   const copy = COPY[lang];
+  const isInteractionLocked = turns.some((turn) => turn.status === "planning")
+    || renderPhase === "planning"
+    || renderPhase === "rendering";
 
   useEffect(() => {
     const storedTurns = loadTurns();
@@ -1725,6 +1544,10 @@ export default function HomePage() {
   useEffect(() => {
     workspaceBoardRef.current = workspaceBoard;
   }, [workspaceBoard]);
+
+  useEffect(() => {
+    interactionLockedRef.current = isInteractionLocked;
+  }, [isInteractionLocked]);
 
   useEffect(() => {
     if (!activeBoard) {
@@ -1771,8 +1594,10 @@ export default function HomePage() {
   }, []);
 
   const submit = useCallback((raw: string) => {
+    if (interactionLockedRef.current) return;
     const prompt = raw.trim();
     if (!prompt) return;
+    interactionLockedRef.current = true;
     const promptLang = appLang;
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const nextTurn: Turn = {
@@ -1816,6 +1641,8 @@ export default function HomePage() {
         const message = error instanceof Error
           ? error.message
           : "The LLM planner failed before returning a grid.";
+        interactionLockedRef.current = false;
+        setRenderPhase("done");
         setTurns((existing) => existing.map((turn) => (
           turn.id === id
             ? {
@@ -1842,10 +1669,12 @@ export default function HomePage() {
     localStorage.removeItem("mizan-notation-turns-v2");
     localStorage.removeItem("mizan-notation-turns");
     localStorage.removeItem("mizan-ui-thread");
+    interactionLockedRef.current = false;
   }, []);
 
   const toggleActiveLanguage = useCallback(() => {
-    if (!activeTurn || !activeBoard) return;
+    if (!activeTurn || !activeBoard || interactionLockedRef.current) return;
+    interactionLockedRef.current = true;
     const nextLang: Lang = activeBoard.lang === "ar" ? "en" : "ar";
     const history: PlannerHistory[] = turns.slice(-6).flatMap((turn): PlannerHistory[] => {
       const assistant = turn.board
@@ -1860,6 +1689,7 @@ export default function HomePage() {
     setTurns((existing) => existing.map((turn) => (
       turn.id === activeTurn.id ? { ...turn, status: "planning" } : turn
     )));
+    setRenderPhase("planning");
     void planGrid({ prompt: activeTurn.prompt, lang: nextLang, history, currentView })
       .then((plan) => {
         const incomingBoard = boardFromPlan({ ...(plan as UiGridPlan), operation: "replace" });
@@ -1873,6 +1703,8 @@ export default function HomePage() {
         const message = error instanceof Error
           ? error.message
           : "The LLM planner failed before returning a translated grid.";
+        interactionLockedRef.current = false;
+        setRenderPhase("done");
         setTurns((existing) => existing.map((turn) => (
           turn.id === activeTurn.id ? { ...turn, status: "error", error: `LLM planner failed: ${message}` } : turn
         )));
@@ -1904,11 +1736,10 @@ export default function HomePage() {
               turns={turns}
               input={input}
               lang={lang}
-              investmentDefaults={investmentDefaults}
+              disabled={isInteractionLocked}
               activeTurnId={activeTurn.id}
               onInput={setInput}
               onSubmit={() => submit(input)}
-              onUseScenario={submit}
               onReset={reset}
               onSelectTurn={selectTurn}
             />
@@ -1928,6 +1759,7 @@ export default function HomePage() {
                 stats={stats}
                 investmentDefaults={investmentDefaults}
                 visibleBlockCount={visibleBlockCount}
+                disabled={isInteractionLocked}
                 onSuggestion={submit}
                 onToggleLanguage={toggleActiveLanguage}
                 registerBlock={registerBlock}
@@ -1939,6 +1771,7 @@ export default function HomePage() {
                 input={input}
                 lang={lang}
                 stats={stats}
+                disabled={isInteractionLocked}
                 onInput={setInput}
                 onSubmit={() => submit(input)}
                 onExample={submit}

@@ -107,7 +107,7 @@ const jsonLd = {
       alternateName: "ميزان",
       url: "https://mizanmasr.com",
       description: "Egypt's government, made visible. منصة شفافية مدنية.",
-      sameAs: ["https://github.com/Ba3lisa/mizan"],
+      sameAs: ["https://github.com/bokralabs/mizan"],
     },
   ],
 };

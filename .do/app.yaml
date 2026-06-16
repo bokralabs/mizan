@@ -3,7 +3,7 @@ region: fra
 services:
   - name: web
     github:
-      repo: Ba3lisa/mizan
+      repo: bokralabs/mizan
       branch: main
       deploy_on_push: true
     source_dir: app

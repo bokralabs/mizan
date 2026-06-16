@@ -26,7 +26,7 @@ and refreshed every 12 hours by AI agents. The full audit trail is publicly visi
 
 - **Language**: Fully bilingual — Arabic (RTL) and English
 - **Currency**: All financial data supports EGP/USD toggle
-- **Code**: Open source at https://github.com/Ba3lisa/mizan
+- **Code**: Open source at https://github.com/bokralabs/mizan
 
 ## Site Map
 

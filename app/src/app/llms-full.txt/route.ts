@@ -183,7 +183,7 @@ export async function GET() {
         md += `| ${ch.category ?? ""} | ${ch.recordCount ?? 0} | ${refreshTime} | ${ch.lastStatus ?? "unknown"} |\n`;
       }
     }
-    md += `\n---\nGenerated: ${now}\nSource: https://mizanmasr.com\nRepository: https://github.com/Ba3lisa/mizan\n`;
+    md += `\n---\nGenerated: ${now}\nSource: https://mizanmasr.com\nRepository: https://github.com/bokralabs/mizan\n`;
 
     return new NextResponse(md, {
       headers: {

@@ -20,7 +20,7 @@ const GITHUB_ISSUE_TOOL = zodToToolSchema(
   GitHubIssueClassificationSchema,
 );
 
-const GITHUB_REPO = "Ba3lisa/mizan";
+const GITHUB_REPO = "bokralabs/mizan";
 const GITHUB_API = "https://api.github.com";
 const BATCH_LIMIT = 10;
 const SPAM_AUTHOR_THRESHOLD = 3;

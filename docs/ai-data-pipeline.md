@@ -82,7 +82,7 @@ Mizan uses an AI-powered data agent built on Convex to keep all government data 
 | FAO/FAOLEX | faolex.fao.org/docs/pdf/egy127542e.pdf | Constitution full text (247 articles) | pdf-parse extracts text, LLM structures articles |
 | Constitute Project | constituteproject.org/constitution/Egypt_2019 | Constitution reference/verification | Referenced as data source |
 | RSS / Google News | /api/news proxy (Next.js route) | Egyptian news headlines, bilingual | 7 RSS feeds; LLM web search supplements |
-| GitHub Issues | github.com/Ba3lisa/mizan/issues | Community data corrections | GitHub API + LLM parsing + LLM Council vote |
+| GitHub Issues | github.com/bokralabs/mizan/issues | Community data corrections | GitHub API + LLM parsing + LLM Council vote |
 
 ## Data Sources by Category
 

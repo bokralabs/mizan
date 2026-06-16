@@ -7,7 +7,7 @@ This setup intentionally hands work off at `Human Review`. Mizan still requires 
 ## Prerequisites
 
 - Codex CLI installed and logged in.
-- GitHub CLI installed and authenticated for `Ba3lisa/mizan`.
+- GitHub CLI installed and authenticated for `bokralabs/mizan`.
 - Linear personal API key in `LINEAR_API_KEY` or `.env.symphony.local`.
 - `mise` installed for the Symphony Elixir reference implementation.
 - A local checkout of `https://github.com/openai/symphony`, defaulting to `~/code/symphony`.
@@ -66,7 +66,7 @@ The `dev symphony run` wrapper passes Symphony's required engineering-preview ac
 `WORKFLOW.md` uses:
 
 - `~/code/mizan-symphony-workspaces` for per-issue workspaces.
-- `git@github.com:Ba3lisa/mizan.git` for workspace clones, overrideable with `SOURCE_REPO_URL`.
+- `git@github.com:bokralabs/mizan.git` for workspace clones, overrideable with `SOURCE_REPO_URL`.
 - `gpt-5.3-codex` by default, overrideable with `CODEX_MODEL`.
 - `codex` by default, overrideable with `CODEX_BIN`.
 - One concurrent agent by default for safer first runs.

@@ -478,8 +478,8 @@ function cleanAnswerText(answer: string, chatReply: string): string {
 
 function safeInvestmentAnswer(language: "en" | "ar"): string {
   return language === "ar"
-    ? "أضفت مؤشرات وسيناريوهات تساعدك تقارن الخيارات بنفسك؛ ميزان لا يقدم توصية استثمارية."
-    : "I added indicators and scenario inputs so you can compare options; Mizan is not making an investment recommendation.";
+    ? "أضفت مؤشرات ومقارنات تساعدك تقارن الخيارات بنفسك؛ ميزان لا يقدم توصية استثمارية."
+    : "I added indicators and comparison inputs so you can compare options; Mizan is not making an investment recommendation.";
 }
 
 const advisoryCopyPattern = /(?:investment advice|advice|recommend|should invest|promising|beneficial|encourage|best option|توصية|نصيحة|أنصح|الأفضل|استثمر)/i;
@@ -492,18 +492,18 @@ function safeInvestmentBlockCopy(
   if (!advisoryCopyPattern.test(text)) return block;
 
   const title = block.kind === "findingSteps"
-    ? language === "ar" ? "قائمة مقارنة السيناريو" : "Scenario checklist"
+    ? language === "ar" ? "قائمة مقارنة الفرضيات" : "Assumption checklist"
     : block.title
-      .replace(/investment advice/gi, language === "ar" ? "مقارنة السيناريو" : "Scenario comparison")
+      .replace(/investment advice/gi, language === "ar" ? "مقارنة الخيارات" : "Option comparison")
       .replace(/advice/gi, language === "ar" ? "مقارنة" : "comparison")
-      .replace(/recommendations?/gi, language === "ar" ? "سيناريوهات" : "scenarios");
+      .replace(/recommendations?/gi, language === "ar" ? "مقارنات" : "comparisons");
 
   return {
     ...block,
     title: cleanVisibleText(title, 90),
     description: language === "ar"
-      ? "اعرض المؤشرات والمخاطر حتى يقارن المستخدم السيناريوهات بنفسه."
-      : "Show indicators and risks so the user can compare scenarios without a recommendation.",
+      ? "اعرض المؤشرات والمخاطر حتى يقارن المستخدم الفرضيات بنفسه."
+      : "Show indicators and risks so the user can compare assumptions without a recommendation.",
   };
 }
 
@@ -599,7 +599,7 @@ function normalizeGridPlan(plan: UiGridPlan): UiGridPlan {
       kind: "toolLauncher",
       span: 5,
       metric: null,
-      title: plan.language === "ar" ? "حوّل السؤال إلى سيناريو" : "Turn it into a scenario",
+      title: plan.language === "ar" ? "افتح محاكي المقارنة" : "Open the comparison simulator",
       description: plan.language === "ar"
         ? "افتح أدوات ميزان لمقارنة نفس المبلغ عبر أكثر من أصل بدل نصيحة عامة."
         : "Open Mizan tools to compare the same amount across assets instead of taking generic advice.",
@@ -650,11 +650,11 @@ Core contract:
 - Pick blocks from the allowed catalog only.
 - Each block must justify why it exists through title and description.
 - Use data references from DATA CONTEXT only. Never invent civic values.
-- If the user asks an advisory question, convert it into scenarios, risks, comparisons, and tool launchers. Do not give financial, legal, or political advice.
+- If the user asks an advisory question, convert it into assumptions, risks, comparisons, and tool launchers. Do not give financial, legal, or political advice.
 - Keep text concise. The page should grow through blocks, charts, metrics, and next actions.
 - Good plans feel like an analyst is assembling an app around the user's question.
-- For investment prompts, never tell the user where they should invest or what is beneficial. Render scenario inputs, rates, risks, and a simulator action.
-- Never title investment blocks "Investment Advice" or "Recommendations"; use "Scenario checklist", "Rate indicators", or "Risk lens".
+- For investment prompts, never tell the user where they should invest or what is beneficial. Render assumption inputs, rates, risks, and a simulator action.
+- Never title investment blocks "Investment Advice" or "Recommendations"; use "Assumption checklist", "Rate indicators", or "Risk lens".
 - If CURRENT VIEW exists, treat the user message as a follow-up unless they clearly ask to start over or switch topics.
 - CURRENT VIEW block ids are durable page memory. Do not resend existing block ids for append. Only include genuinely new blocks unless the user asks to revise a specific existing block.
 - For follow-ups, prefer operation=focus or operation=update when existing blocks can answer the ask. Use append only when the user clearly needs an additional chart, source list, tool, or metric not already represented.

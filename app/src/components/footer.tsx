@@ -42,7 +42,7 @@ export function Footer() {
           <p className="text-xs text-muted-foreground leading-relaxed max-w-xs mb-3">
             {t.footer_description}
           </p>
-          <a href="https://github.com/Ba3lisa/mizan" target="_blank" rel="noopener noreferrer"
+          <a href="https://github.com/bokralabs/mizan" target="_blank" rel="noopener noreferrer"
             className="text-xs text-muted-foreground no-underline hover:text-primary transition-colors inline-flex items-center gap-1.5">
             <Github size={14} /> GitHub
           </a>
@@ -69,7 +69,7 @@ export function Footer() {
         </p>
         <div className="flex items-center gap-3">
           <a
-            href={`https://github.com/Ba3lisa/mizan/releases/tag/${process.env.NEXT_PUBLIC_APP_VERSION || "v1.0.2"}`}
+            href={`https://github.com/bokralabs/mizan/releases/tag/${process.env.NEXT_PUBLIC_APP_VERSION || "v1.0.2"}`}
             target="_blank"
             rel="noopener noreferrer"
             className="text-[0.625rem] text-muted-foreground/60 no-underline hover:text-primary font-mono transition-colors"

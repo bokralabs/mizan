@@ -63,7 +63,7 @@ flowchart LR
   Registry --> Cards[MetricCard]
   Registry --> Charts[BarChart / SplitBar / TrendChart]
   Registry --> Sources[SourcePanel + SanadBadge]
-  Registry --> Forms[Scenario controls]
+  Registry --> Forms[Assumption controls]
   Registry --> Layout[Stack / Grid / Section]
 
   Catalog --> Prompt[catalog.prompt]

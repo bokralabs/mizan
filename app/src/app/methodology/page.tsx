@@ -148,7 +148,7 @@ export default function MethodologyPage() {
             <div className="flex flex-wrap gap-3">
               <Button asChild className="w-fit gap-2">
                 <a
-                  href="https://github.com/Ba3lisa/mizan/issues/new?template=data-issue.md&labels=data-correction"
+                  href="https://github.com/bokralabs/mizan/issues/new?template=data-issue.md&labels=data-correction"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -159,7 +159,7 @@ export default function MethodologyPage() {
               </Button>
               <Button asChild variant="outline" className="w-fit gap-2">
                 <a
-                  href="https://github.com/Ba3lisa/mizan/issues/new?template=bug-report.md&labels=bug"
+                  href="https://github.com/bokralabs/mizan/issues/new?template=bug-report.md&labels=bug"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -170,7 +170,7 @@ export default function MethodologyPage() {
               </Button>
               <Button asChild variant="outline" className="w-fit gap-2">
                 <a
-                  href="https://github.com/Ba3lisa/mizan/issues/new?template=feature-request.md&labels=enhancement"
+                  href="https://github.com/bokralabs/mizan/issues/new?template=feature-request.md&labels=enhancement"
                   target="_blank"
                   rel="noopener noreferrer"
                 >

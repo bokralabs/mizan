@@ -25,7 +25,7 @@
 
 ## DigitalOcean Setup
 
-1. Create App from GitHub repo: Ba3lisa/mizan
+1. Create App from GitHub repo: bokralabs/mizan
 2. Source directory: /app
 3. Build command: `npm ci --legacy-peer-deps && npm run build`
 4. Run command: `npm start`
@@ -56,7 +56,7 @@
    - `OPENROUTER_MODEL` -- (optional) override the default OpenRouter model
 
    **Other keys:**
-   - `GITHUB_TOKEN` = GitHub personal access token with `issues:write` permission on `Ba3lisa/mizan` (required for the GitHub Issues AI agent to read and comment on community data corrections)
+   - `GITHUB_TOKEN` = GitHub personal access token with `issues:write` permission on `bokralabs/mizan` (required for the GitHub Issues AI agent to read and comment on community data corrections)
 
    **Dev-only:**
    - `DISABLE_CRONS=true` -- set in dev deployment to skip all cron jobs
@@ -100,7 +100,7 @@ The `GITHUB_TOKEN` is used by `convex/agents/githubAgent.ts` to:
 - Post automated verification comments
 - Apply the `verified` label when a correction is confirmed
 
-Create a fine-grained personal access token at https://github.com/settings/tokens and grant it **Read and Write** access to Issues on the `Ba3lisa/mizan` repository. If the token is absent the GitHub agent skips all operations gracefully without failing.
+Create a fine-grained personal access token at https://github.com/settings/tokens and grant it **Read and Write** access to Issues on the `bokralabs/mizan` repository. If the token is absent the GitHub agent skips all operations gracefully without failing.
 
 ## CI/CD Workflows
 
@@ -141,7 +141,7 @@ Queries `dataRefresh:getAllLastUpdated` against the production Convex deployment
 
 ## GitHub Secrets Required
 
-Set these in Ba3lisa/mizan -> Settings -> Secrets:
+Set these in bokralabs/mizan -> Settings -> Secrets:
 
 | Secret | Source |
 |--------|--------|
