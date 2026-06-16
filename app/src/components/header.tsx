@@ -21,7 +21,7 @@ import {
 
 export function Header() {
   const { theme, toggleTheme } = useTheme();
-  const { t, toggleLang, lang, dir } = useLanguage();
+  const { t, lang, dir, toggleLang } = useLanguage();
   const pathname = usePathname();
   const [scrolled, setScrolled] = useState(false);
 
@@ -32,14 +32,25 @@ export function Header() {
   }, []);
 
   const isAr = lang === "ar";
-  // --- Grouped Navigation (from shared config) ---
-  const navGroups = NAV_GROUPS.map((g) => ({
-    label: isAr ? g.ar : g.en,
-    items: g.items.map((item) => ({
-      href: item.href,
-      label: isAr ? item.ar : item.en,
-    })),
-  }));
+  const toolsGroup = NAV_GROUPS.find((g) => g.labelKey === "navTools");
+  const aboutGroup = NAV_GROUPS.find((g) => g.labelKey === "navAboutMizan");
+  const toolsNav = toolsGroup
+    ? {
+        label: isAr ? toolsGroup.ar : toolsGroup.en,
+        items: toolsGroup.items.map((item) => ({
+          href: item.href,
+          label: isAr ? item.ar : item.en,
+        })),
+      }
+    : null;
+  const aboutItems = aboutGroup
+    ? aboutGroup.items
+        .filter((item) => ["/transparency", "/methodology", "/funding"].includes(item.href))
+        .map((item) => ({
+          href: item.href,
+          label: isAr ? item.ar : item.en,
+        }))
+    : [];
   const isActive = (href: string) => href === "/" ? pathname === "/" : pathname.startsWith(href);
 
   return (
@@ -61,7 +72,6 @@ export function Header() {
         {/* Desktop Nav — NavigationMenu for smooth hover-intent UX */}
         <NavigationMenu className="hidden lg:flex flex-1" dir={dir} viewport={false}>
           <NavigationMenuList className="gap-1">
-            {/* Home — standalone link */}
             <NavigationMenuItem>
               <NavigationMenuLink asChild active={pathname === "/"}>
                 <Link
@@ -78,20 +88,19 @@ export function Header() {
               </NavigationMenuLink>
             </NavigationMenuItem>
 
-            {/* Dropdown groups */}
-            {navGroups.map((group) => (
-              <NavigationMenuItem key={group.label}>
+            {toolsNav && (
+              <NavigationMenuItem key={toolsNav.label}>
                 <NavigationMenuTrigger
                   className={cn(
                     "text-[0.8125rem] font-medium bg-transparent hover:bg-accent",
-                    group.items.some(n => isActive(n.href)) && "text-primary"
+                    toolsNav.items.some(n => isActive(n.href)) && "text-primary"
                   )}
                 >
-                  {group.label}
+                  {toolsNav.label}
                 </NavigationMenuTrigger>
                 <NavigationMenuContent className="min-w-[180px]">
                   <ul className="flex flex-col gap-0.5 p-1.5">
-                    {group.items.map((n) => (
+                    {toolsNav.items.map((n) => (
                       <li key={n.href}>
                         <NavigationMenuLink asChild active={isActive(n.href)}>
                           <Link
@@ -110,14 +119,37 @@ export function Header() {
                   </ul>
                 </NavigationMenuContent>
               </NavigationMenuItem>
+            )}
+            {aboutItems.map((item) => (
+              <NavigationMenuItem key={item.href}>
+                <NavigationMenuLink asChild active={isActive(item.href)}>
+                  <Link
+                    href={item.href}
+                    className={cn(
+                      "inline-flex h-9 items-center justify-center rounded-md px-3 py-2 text-[0.8125rem] font-medium transition-colors outline-none",
+                      "hover:bg-accent hover:text-accent-foreground",
+                      "focus:bg-accent focus:text-accent-foreground",
+                      isActive(item.href) && "text-primary",
+                    )}
+                  >
+                    {item.label}
+                  </Link>
+                </NavigationMenuLink>
+              </NavigationMenuItem>
             ))}
           </NavigationMenuList>
         </NavigationMenu>
 
         {/* Controls */}
         <div className="flex items-center gap-1.5 ms-auto">
-          <Button variant="ghost" size="sm" onClick={toggleLang} className="text-xs font-bold h-8 px-3 text-muted-foreground hover:text-foreground">
-            {t.toggleLang}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={toggleLang}
+            className="h-8 px-2.5 text-xs font-bold text-muted-foreground hover:text-foreground"
+            aria-label={t.toggleLang}
+          >
+            {lang === "ar" ? "En" : "ع"}
           </Button>
           <Button variant="ghost" size="icon" onClick={toggleTheme} className="h-8 w-8 text-muted-foreground hover:text-foreground">
             {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
@@ -135,23 +167,35 @@ export function Header() {
               </SheetHeader>
               <Separator className="my-3" />
               <nav className="flex flex-col gap-0.5 overflow-y-auto max-h-[calc(100vh-8rem)] pb-6" dir={dir}>
+                <button
+                  type="button"
+                  onClick={toggleLang}
+                  className="px-3 py-2.5 rounded-lg text-sm font-bold text-muted-foreground hover:bg-muted hover:text-foreground transition-colors text-start"
+                >
+                  {lang === "ar" ? "English" : "العربية"}
+                </button>
+
                 {/* Home */}
                 <SheetClose asChild>
                   <Link href="/" className={cn("px-3 py-2.5 rounded-lg text-sm font-medium no-underline transition-colors", isActive("/") ? "text-primary bg-primary/10" : "text-foreground hover:bg-muted")}>{t.navHome}</Link>
                 </SheetClose>
 
-                {/* Grouped sections */}
-                {navGroups.map((group) => (
-                  <div key={group.label} className="mt-3">
-                    <span className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{group.label}</span>
+                {toolsNav && (
+                  <div key={toolsNav.label} className="mt-3">
+                    <span className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{toolsNav.label}</span>
                     <div className="flex flex-col gap-0.5 mt-1">
-                      {group.items.map((n) => (
+                      {toolsNav.items.map((n) => (
                         <SheetClose asChild key={n.href}>
                           <Link href={n.href} className={cn("px-3 py-2.5 rounded-lg text-sm font-medium no-underline transition-colors", isActive(n.href) ? "text-primary bg-primary/10" : "text-foreground hover:bg-muted")}>{n.label}</Link>
                         </SheetClose>
                       ))}
                     </div>
                   </div>
+                )}
+                {aboutItems.map((item) => (
+                  <SheetClose asChild key={item.href}>
+                    <Link href={item.href} className={cn("px-3 py-2.5 rounded-lg text-sm font-medium no-underline transition-colors", isActive(item.href) ? "text-primary bg-primary/10" : "text-foreground hover:bg-muted")}>{item.label}</Link>
+                  </SheetClose>
                 ))}
               </nav>
             </SheetContent>

@@ -53,7 +53,7 @@ Convex has no native `COUNT(*)`. The codebase uses `.collect()` on entire tables
 | Query | File | Pattern | Impact |
 |-------|------|---------|--------|
 | `pipelineProgress.getProgress` | `pipelineProgress.ts` | `.collect()` all progress rows | **Homepage** — every visitor subscribes, re-fires 12+ times per pipeline run |
-| `pipelineProgress.updateStep` | `pipelineProgress.ts` | `.collect()` + JS `.find()` to patch one row | Called every few seconds during pipeline run |
+| `pipelineProgress.updateStep` | `pipelineProgress.ts` | ~~`.collect()` + JS `.find()`~~ **Fixed**: uses `by_runId_and_step` index + `.unique()` | Called every few seconds during pipeline run |
 
 ---
 
@@ -120,14 +120,12 @@ Convex has no native `COUNT(*)`. The codebase uses `.collect()` on entire tables
 
 ### P1 — High (saves ~15% of I/O)
 
-4. **Add `by_runId_and_step` index to pipelineProgress**
-   - `updateStep` currently collects all 12 rows to find one
-   - With a composite index: `.withIndex("by_runId_and_step", q => q.eq("runId", x).eq("step", y)).unique()`
-   - Reads 1 document instead of 12 per step update
+4. ~~**Add `by_runId_and_step` index to pipelineProgress**~~ **DONE**
+   - Index added to schema and `updateStep` now uses `.withIndex("by_runId_and_step", ...)`.unique()`
 
-5. **Add `by_wasAmended2019` index to constitutionArticles**
-   - `listAmendedArticles` currently scans all 247 articles with in-memory filter
-   - With index: reads only ~20 amended articles
+5. **Use `by_wasAmended2019` index in `listAmendedArticles`**
+   - Index exists in schema but `constitution.ts:listAmendedArticles` still collects all 247 articles and filters in memory
+   - Fix: `.withIndex("by_wasAmended2019", q => q.eq("wasAmended2019", true))` — reads only ~20 amended articles
 
 6. **Fix `listMembers` N+1 pattern**
    - Batch-fetch unique parties and governorates first, then map
@@ -172,9 +170,63 @@ Convex has no native `COUNT(*)`. The codebase uses `.collect()` on entire tables
 - 1,200 × 3 KB = 3.6 MB — still negligible
 
 ### Current actual costs (April 2026)
-- **API tokens used**: 16,161 (6 calls) — $0.04 total
+- **Pipeline API tokens used**: 16,161 (6 calls) — $0.04 total
+- **Guide chat**: gpt-4.1-mini via `@convex-dev/agent`, $20/month budget cap enforced by `guide.ts:checkMonthlyCost`
 - **Infrastructure**: Convex $10/mo + DigitalOcean $12/mo = $22/mo
-- **Total monthly burn**: ~$22.04/mo
+- **Convex components**: `@convex-dev/agent` (guide chat threads + tool execution) and `@convex-dev/rate-limiter` (guide message throttling) — included in Convex plan, adds to function calls and action compute
+- **Total monthly burn**: ~$22/mo + API costs (pipeline + guide chat)
+
+---
+
+## Guide Chat — Cost Tracking
+
+The guide chat (`guide.ts`, `guideActions.ts`) uses `gpt-4.1-mini` via the `@convex-dev/agent` component with a hard $20/month budget cap.
+
+### How costs are tracked
+- Every agent response logs tokens and estimated cost to the `chatUsage` table via `guideAnalytics.ts:logUsage`
+- `guide.ts:checkMonthlyCost` sums all `chatUsage` rows since the 1st of the current month
+- When `totalCostUsd >= 20`, the frontend should block new messages (`isOverBudget: true`)
+
+### Cost table (`chatUsage`)
+| Field | Purpose |
+|-------|---------|
+| `userId` | Optional session identifier |
+| `threadId` | Agent thread ID |
+| `model` | Model used (currently `gpt-4.1-mini`) |
+| `provider` | Provider name (`openai`) |
+| `promptTokens` / `completionTokens` | Token counts from the API response |
+| `costUsd` | Estimated cost from `lib/tokenCost.ts:estimateCost` |
+| `timestamp` | Unix ms, indexed for monthly aggregation |
+
+### Rate limiting
+`@convex-dev/rate-limiter` enforces per-session limits in `rateLimits.ts`:
+- `guideMessage`: 1 message per 3 seconds (fixed window)
+- `guideTokens`: 10,000 tokens/hour, burst capacity 30,000
+
+### Note on pricing gap
+`gpt-4.1-mini` is not in the `MODEL_PRICING` table in `lib/tokenCost.ts`. The `estimateCost` function returns `0` for unknown models, so guide chat costs are currently under-counted in `chatUsage`. The closest entry is `gpt-5.4-mini` ($0.20/$0.80 per 1M tokens).
+
+---
+
+## Model Pricing Reference (`lib/tokenCost.ts`)
+
+All models tracked by the cost system, with per-1M-token pricing:
+
+| Model | Input $/1M | Output $/1M | Used By |
+|-------|-----------|------------|---------|
+| `grok-4-1-fast-non-reasoning` | $0.20 | $0.50 | Pipeline (xAI, non-reasoning mode) |
+| `grok-4-1-fast-reasoning` | $0.20 | $0.50 | Pipeline (xAI, default) |
+| `grok-4.20-0309-non-reasoning` | $2.00 | $6.00 | Pipeline (xAI, higher-tier) |
+| `claude-haiku-4-5-20251001` | $0.80 | $3.20 | Pipeline (Anthropic) |
+| `claude-sonnet-4-20250514` | $3.00 | $15.00 | Pipeline (Anthropic, higher-tier) |
+| `gpt-4o-mini` | $0.15 | $0.60 | Pipeline (OpenAI), Council |
+| `gpt-4o` | $2.50 | $10.00 | Pipeline (OpenAI, higher-tier) |
+| `gemini-2.0-flash` | $0.075 | $0.30 | Pipeline (Google) |
+| `meta-llama/llama-4-scout` | $0.15 | $0.60 | Pipeline (OpenRouter) |
+| `gpt-5.4-mini` | $0.20 | $0.80 | Pipeline (OpenAI, newer) |
+| `gpt-4.1-mini` | **missing** | **missing** | Guide chat (not tracked — costs report as $0) |
+
+Provider priority for pipeline: xAI (Grok) > OpenAI > Anthropic > Google > OpenRouter.
 
 ---
 
@@ -195,7 +247,8 @@ At current usage levels, the Starter plan is more than sufficient:
 
 Track these metrics monthly:
 - **Convex Dashboard** → Usage tab (https://dashboard.convex.dev)
-- **API costs** → `npx convex run usage:getCurrentMonthCost` (real-time from our tracking)
+- **Pipeline API costs** → `npx convex run usage:getCurrentMonthCost` (real-time from `apiUsageLog`)
+- **Guide chat costs** → `npx convex run guide:checkMonthlyCost` (real-time from `chatUsage`, $20/mo cap)
 - **Usage by purpose** → `npx convex run usage:getUsageByPurpose '{"days": 30}'`
-- **Runway** → `npx convex run usage:getRunwaySummary`
+- **Runway** → `npx convex run usage:getRunwaySummary` (uses fixed $22/mo infrastructure + pipeline API costs; does not yet include guide chat costs)
 - Run `npx convex insights` (requires user auth, not deploy key)

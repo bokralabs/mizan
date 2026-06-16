@@ -16,10 +16,13 @@ Mizan is structured in three layers: a Visual Layer that users interact with, a 
 |              React / Next.js Web Application                  |
 |                                                               |
 |  Pages: /budget, /debt, /parliament, /government,             |
-|         /constitution, /elections, /transparency               |
-|  Components: Sankey charts, hemicycle, governorate map,        |
-|              data tables, search, bilingual toggle             |
-|  Providers: CurrencyProvider (EGP/USD), LanguageProvider       |
+|         /constitution, /elections, /economy, /transparency     |
+|  Tools: /tools/tax-calculator, /tools/invest,                 |
+|         /tools/buy-vs-rent, /tools/mashroaak                  |
+|  Components: Sankey charts, hemicycle, data tables, search,   |
+|              bilingual toggle, guide chat (AI assistant)       |
+|  Providers: ThemeProvider, LanguageProvider, GuideProvider     |
+|  Integrations: WebMCP (navigator.modelContext), driver.js     |
 +---------------------------------------------------------------+
         |                                          ^
         | Convex useQuery / useAction              | Real-time
@@ -29,16 +32,17 @@ Mizan is structured in three layers: a Visual Layer that users interact with, a 
 |                        DATA LAYER                             |
 |                    Convex Database                             |
 |                                                               |
-|  26+ tables (core data + agent/council/funding tables)        |
+|  40 tables (core data + agent/council/funding/guide tables)   |
 |                                                               |
 |  Core data:                                                   |
 |    budgetItems, debtRecords, parliamentMembers,               |
-|    governmentOfficials, constitutionArticles,                  |
-|    elections, governorates, politicalParties                   |
+|    officials, constitutionArticles, elections,                 |
+|    governorates, parties, investmentOpportunities             |
 |                                                               |
-|  Agent data:                                                  |
-|    dataRefreshLog, agentChangelog, councilVotes,               |
-|    councilSessions, githubIssues, fundingRecords              |
+|  Agent/infra data:                                            |
+|    dataRefreshLog, dataChangeLog, councilVotes,               |
+|    councilSessions, githubIssueProcessing,                    |
+|    fundingDonations, chatUsage, pipelineProgress              |
 |                                                               |
 |  Every record has a sourceUrl field.                          |
 +---------------------------------------------------------------+
@@ -50,11 +54,15 @@ Mizan is structured in three layers: a Visual Layer that users interact with, a 
 |                      AGENTIC LAYER                            |
 |                    Convex Agents                              |
 |                                                               |
-|  Orchestrator: dataAgent.ts (cron every 12h)                   |
+|  Orchestrator: dataAgent.ts (cron every 12h)                  |
 |  LLM Council: multi-model voting on data changes              |
 |  GitHub Agent: issue ingestion, spam filtering                |
+|  Guide Agent: Convex Agent SDK chat (GPT-4.1-mini)            |
 |  Validators: deterministic checks (sums, counts, ranges)      |
-|  Providers: Claude Haiku 4.5 (+ OpenAI, Google planned)       |
+|  Verifier: Zod-based LLM output validation (verify.ts)        |
+|  Providers: xAI Grok, OpenAI, Claude Haiku 4.5, Gemini,      |
+|             OpenRouter (priority fallback chain)               |
+|  Components: @convex-dev/agent, @convex-dev/rate-limiter      |
 +---------------------------------------------------------------+
         |
         | Fetches from external sources
@@ -63,9 +71,11 @@ Mizan is structured in three layers: a Visual Layer that users interact with, a 
 |                   EXTERNAL SOURCES                            |
 |                                                               |
 |  World Bank API        Ministry of Finance (mof.gov.eg)       |
-|  Central Bank of Egypt Ahram Online (ahram.org.eg)            |
-|  Wikipedia (parliament) State Information Service (sis.gov.eg)|
-|  CAPMAS statistics     Elections Authority (elections.eg)      |
+|  IMF DataMapper API    Ahram Online (ahram.org.eg)            |
+|  ExchangeRate-API      Central Bank of Egypt                  |
+|  Wikipedia (parliament) parliament.gov.eg                     |
+|  IDA (ida.gov.eg)      GAFI (gafi.gov.eg)                    |
+|  countryeconomy.com    GDELT (news headlines)                 |
 |  FAO/FAOLEX (constitution PDF)                                |
 +---------------------------------------------------------------+
 ```
@@ -79,19 +89,32 @@ The Visual Layer renders all government data as interactive visualizations and s
 Key pages and their visualizations:
 - `/budget` -- Sankey flow diagram connecting revenue sources to expenditure categories
 - `/debt` -- Time-series charts of external debt, GDP ratios, and creditor composition
+- `/economy` -- GDP growth, inflation, exchange rate, sovereign credit ratings, stock index
 - `/parliament` -- Hemicycle seating charts for House (596 seats) and Senate (300 seats), with party breakdown
 - `/government` -- Cabinet grid, ministry list, governorate map with governor profiles
 - `/constitution` -- Full-text search across all 247 articles
 - `/elections` -- Interactive governorate map with historical election results
 - `/transparency` -- Audit trail table showing every data refresh the agent has performed
 
-Bilingual support: all pages render in both Arabic (RTL) and English (LTR), switchable via a global toggle. Currency values support EGP/USD conversion via the CurrencyProvider context.
+Interactive tools:
+- `/tools/tax-calculator` -- Egyptian income tax calculator with per-sector spending breakdown
+- `/tools/invest` -- Portfolio simulator across Egyptian asset classes (stocks, CDs, T-bills, gold, real estate)
+- `/tools/buy-vs-rent` -- Buy vs rent comparison with mortgage, installments, and cash options
+- `/tools/mashroaak` -- Investment opportunity explorer sourcing real projects from IDA and GAFI
+
+Guide chat: An AI-powered assistant (currently disabled in production) that helps users navigate the platform. Built with the Convex Agent SDK (`@convex-dev/agent`) and GPT-4.1-mini, it supports three actions: navigate (propose page transitions), highlight (spotlight UI elements via driver.js), and controlInput (set values on tool pages). The guide chat panel opens on the left side of the screen and pushes the main content via the `#mizan-app` wrapper div. Page tours are defined in `guide-workflows.ts` with per-page `PAGE_TOURS` step arrays.
+
+WebMCP integration: Pages register tools with the WebMCP `navigator.modelContext` API (W3C draft spec) so AI agents in browsers can discover and invoke them. The `useWebMCPTool` hook in `app/src/lib/webmcp.ts` handles feature detection, React Strict Mode guards, and cleanup. A static manifest at `app/public/.well-known/webmcp` declares available tools and multi-step flows. Global WebMCP tools (site overview, full data export, data health) are registered by the `WebMcpRegistration` component in `app/src/components/web-mcp.tsx`. Tool pages additionally register page-specific tools via `useWebMCPTool`, which also registers them in the guide chat's client-side tool registry (`app/src/lib/guide-registry.ts`).
+
+data-guide attributes: UI elements across all major pages are annotated with `data-guide` attributes (e.g., `data-guide="budget-flow"`, `data-guide="salary-input"`). These serve as stable selectors for the guide chat's highlight tool and driver.js page tours.
+
+Bilingual support: all pages render in both Arabic (RTL) and English (LTR), switchable via a global toggle. Currency formatting uses the `fmt()` utility in `app/src/lib/format.ts`.
 
 ## Data Layer
 
 **Stack**: Convex (serverless database with real-time subscriptions)
 
-All data lives in Convex as the single source of truth. The schema defines 26+ tables across several categories:
+All data lives in Convex as the single source of truth. The schema defines 40 tables across several categories:
 
 ### Core Data Tables
 
@@ -107,18 +130,19 @@ These store the structured government data that users see:
 - `debtRecords` (10) -- External debt snapshots by year with total, GDP ratio, and creditor breakdown
 - `debtByCreditor` -- Per-creditor debt breakdown with `interestRate`, `annualDebtService`, and `maturityYears` fields
 - `elections` (3), `electionResults`, `governorateElectionData` -- Election results with governorate-level granularity
-- `taxBrackets` (7 brackets for 2024) -- Income tax brackets per Law 7/2024, powering the /budget/your-share calculator
+- `taxBrackets` (7 brackets for 2024) -- Income tax brackets per Law 7/2024, powering the /tools/tax-calculator page
 
-Additional tables cover supporting data: exchange rates, economic indicators, `dataSources`, `dataLineage`, and `aiResearchReports`.
+Additional tables cover supporting data: `economicIndicators`, `governorateStats`, `dataSources`, `dataLineage`, `aiResearchReports`, `sovereignRatings`, `polls`, `pollVotes`, `apiUsageLog`, `pipelineProgress`, `investmentOpportunities`, `investmentProjectDetails`, `newsHeadlines`, and `chatUsage`.
 
 ### Agent and Infrastructure Tables
 
 These support the agentic layer's operations:
-- `dataRefreshLog` -- Every refresh attempt with status, record count, source URL, `contentHash` (for skip-if-unchanged), and timestamps
+- `dataRefreshLog` -- Every refresh attempt with status, record count, source URL, and timestamps
 - `dataChangeLog` -- Detailed record of what changed and why, for the transparency page
 - `councilSessions`, `councilVotes` -- LLM Council voting sessions and individual votes
 - `githubIssueProcessing` -- Ingested community issues awaiting or completed processing
 - `fundingDonations`, `fundingAllocations`, `fundingSummary` -- Donation and sponsorship records for the funding transparency page
+- `chatUsage` -- Guide chat token and cost tracking per thread, with a $20/month budget cap
 
 ### Data Integrity Rules
 
@@ -130,9 +154,15 @@ These support the agentic layer's operations:
 
 ## Agentic Layer
 
-**Stack**: Convex actions (server-side), Claude Haiku 4.5 API, pdf-parse (for constitution PDF extraction), deterministic validators
+**Stack**: Convex actions (server-side), multi-provider LLM registry (xAI Grok, OpenAI, Anthropic Claude, Google Gemini, OpenRouter), Convex Agent SDK (`@convex-dev/agent`), `@convex-dev/rate-limiter`, pdf-parse (for constitution PDF extraction), Zod schemas + verifier, deterministic validators
 
-The Agentic Layer is responsible for keeping data fresh and processing community contributions. It consists of four components:
+The Agentic Layer is responsible for keeping data fresh, processing community contributions, and powering the guide chat. It consists of six components:
+
+### Convex Component Registration (convex.config.ts)
+
+The Convex app registers two components:
+- `@convex-dev/agent` -- powers the guide chat agent with thread management, message persistence, and tool execution
+- `@convex-dev/rate-limiter` -- enforces per-session rate limits on guide chat (1 message per 3 seconds, 10K tokens/hour)
 
 ### Orchestrator (dataAgent.ts)
 
@@ -146,9 +176,26 @@ A Convex cron job fires every 12 hours and triggers the orchestrator. The orches
 7. **GitHub issue processing** -- processes data-correction/stale-data issues via LLM Council
 8. **Log compaction** -- daily cron deletes refresh logs older than 30 days
 
+### LLM Provider Registry (agents/providers/registry.ts)
+
+A multi-provider system with automatic fallback. Priority order: xAI Grok > OpenAI > Anthropic Claude > Google Gemini > OpenRouter. The registry auto-detects available providers from environment variables. For the pipeline, it uses the highest-priority available provider. For the council, it uses all available providers (each casts a vote). Server tools (web search) route to the first capable provider.
+
+### LLM Output Verifier (agents/verify.ts)
+
+All LLM responses pass through `verifyLLMOutput()` or `parseAndVerify()` before being written to Convex. This enforces Zod schema compliance, handles markdown fences and other LLM quirks in JSON extraction, and logs verification results. Schemas are centralized in `agents/schemas.ts`.
+
 ### LLM Council
 
 A multi-model voting system for verifying community-submitted data corrections. When a GitHub issue proposes a data change, the council evaluates the claim against the cited source. Each provider votes independently (approve / reject / abstain), and votes are tallied according to source classification rules. See `ai-data-pipeline.md` for the full decision matrix.
+
+### Guide Agent (guideActions.ts, guide.ts, guideAnalytics.ts)
+
+An interactive AI assistant built with the Convex Agent SDK. Uses GPT-4.1-mini with three tools:
+- `navigate` -- proposes page navigation with a confirmation button
+- `highlight` -- spotlights a UI element on the current page using driver.js (targets `data-guide` attributes)
+- `controlInput` -- sets values on tool page inputs, or asks the user for missing information first
+
+The agent is context-aware: each request includes the user's current page, available `data-guide` selectors, and available WebMCP tools for that page. Thread management and message streaming use the Convex Agent SDK. Usage is tracked in the `chatUsage` table with a $20/month cost cap enforced by `guide.checkMonthlyCost`. Rate limiting via `@convex-dev/rate-limiter` prevents spam (1 message per 3 seconds, 10K token budget per hour).
 
 ### GitHub Agent
 
@@ -162,6 +209,10 @@ Located in `convex/agents/validators.ts`. These are pure functions with no LLM i
 - `validateDebtRecord` -- No negative values, GDP ratio within bounds
 - `parseWorldBankResponse` -- Parses World Bank API v2 JSON format
 - `extractClaudeText` -- Extracts structured text from Claude API responses
+
+### Structured Schemas (agents/schemas.ts)
+
+Centralized Zod schemas for all LLM-extracted data. Every LLM call in the pipeline uses a schema from this file for structured output generation, runtime validation, and TypeScript type inference. Covers budget, government, parliament, economy, constitution, industry/investment, news, council votes, and GitHub issue classification. Includes a `zodToToolSchema()` utility that converts Zod schemas to JSON Schema for LLM tool_use.
 
 ## Data Flows
 
@@ -222,3 +273,38 @@ React renders visualization (Sankey chart, hemicycle, etc.)
     v
 If data updates in Convex --> real-time push --> UI re-renders automatically
 ```
+
+### Guide Chat Flow
+
+```
+User opens guide chat (Compass button, bottom-left)
+    |
+    v
+GuideChat component creates a thread via Convex Agent SDK
+    |
+    v
+User sends message (or picks a preset)
+    |
+    +-- guide.sendMessage mutation saves message + schedules guideActions.generateResponse
+    |
+    v
+guideAgent (GPT-4.1-mini) runs with page context (current page, selectors, tools)
+    |
+    +-- navigate tool --> frontend shows "Go to /page" confirmation button
+    +-- highlight tool --> driver.js spotlights element via data-guide selector
+    +-- controlInput tool --> sets values on tool page inputs (or asks for missing info)
+    |
+    v
+Actions rendered as cards (NavigateCard, HighlightCard, ControlCard, AskCard)
+    |
+    v
+Cross-page actions use localStorage (savePendingAction) + useGuidePending hook
+```
+
+## Layout Structure
+
+The root layout (`app/src/app/layout.tsx`) wraps all page content in a `#mizan-app` div. This wrapper enables the guide chat panel to push the main content to the right when open on desktop (via `marginLeft` style adjustment). The layout includes:
+- `Providers` -- ConvexProvider, ThemeProvider, LanguageProvider, TooltipProvider
+- `Header` and `Footer` -- persistent navigation
+- `WebMcpRegistration` -- registers global WebMCP tools
+- `GuideChat` -- AI assistant panel (currently commented out for production)

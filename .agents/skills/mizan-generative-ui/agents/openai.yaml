@@ -1,0 +1,7 @@
+interface:
+  display_name: "Mizan Generative UI"
+  short_description: "Planner-driven UI, chat flow, and motion rules"
+  brand_color: "#C9A84C"
+  default_prompt: "Use $mizan-generative-ui to improve the generated chat UI without breaking the grid planner contract."
+policy:
+  allow_implicit_invocation: true

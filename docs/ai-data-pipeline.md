@@ -12,10 +12,10 @@ Mizan uses an AI-powered data agent built on Convex to keep all government data 
 │                                                       │
 │  Every 12 hours:                                      │
 │    crons.ts → internal.agents.dataAgent.orchestrateRefresh │
+│  Weekly (168 hours):                                  │
+│    crons.ts → internal.agents.pollAgent.generateDailyPoll │
 │  Daily:                                               │
-│    crons.ts → log compaction (delete logs >30 days)   │
-│  Weekly:                                              │
-│    crons.ts → generate weekly poll (pollAgent)        │
+│    crons.ts → agents/maintenance.compactRefreshLogs   │
 └──────────────────────┬──────────────────────────────┘
                        │
                        ▼
@@ -23,20 +23,20 @@ Mizan uses an AI-powered data agent built on Convex to keep all government data 
 │              AI Orchestrator Action                    │
 │           convex/agents/dataAgent.ts                  │
 │                                                       │
-│  1.  reference_data     — ensureAllReferenceData (18 tables)  │
-│  2.  government         — Cabinet (Wikipedia/Ahram + Claude)  │
-│  3.  parliament         — Members (parliament.gov.eg + Wiki)  │
-│  4.  budget             — MOF open data + Claude parsing      │
-│  5.  debt               — World Bank API (debt stock + GDP)   │
-│  6.  economy            — World Bank indicators, IMF, FX rate │
-│  7.  governorate_stats  — Claude web research per governorate │
-│  8.  industry           — IDA + GAFI investment opportunities │
-│  9.  constitution       — FAO PDF extraction if < 247 arts.   │
-│  10. github_issues      — Community data corrections (LLM)    │
-│  11. narrative          — AI bilingual economic narrative     │
-│  12. news               — RSS feeds + LLM web search          │
-│  13. llm_export         — ISR revalidation of /llms-full.txt  │
-│  14. cleanup            — Log compaction                      │
+│  1.  reference_data     — ensureAllReferenceData (18 tables) │
+│  2.  government         — Cabinet (Wikipedia/Ahram + LLM)    │
+│  3.  parliament         — Members (parliament.gov.eg + Wiki) │
+│  4.  budget             — MOF + Wikipedia + LLM parsing      │
+│  5.  debt               — World Bank API (debt stock/service)│
+│  6.  economy            — World Bank, IMF, CBE, FX, EGX      │
+│  7.  governorate_stats  — Wikipedia/CAPMAS + web research    │
+│  8.  industry           — IDA + GAFI investment opportunities│
+│  9.  constitution       — FAO PDF extraction if < 247 arts.  │
+│  10. github_issues      — Community data corrections (LLM)   │
+│  11. narrative          — AI bilingual economic narrative    │
+│  12. news               — RSS feeds + LLM web search         │
+│  13. llm_export         — ISR revalidation of /llms-full.txt │
+│  14. cleanup            — Pipeline cleanup step              │
 └──────────────────────┬──────────────────────────────────────┘
                        │
      ┌────────┬────────┼────────┬────────┬────────┐
@@ -58,7 +58,8 @@ Mizan uses an AI-powered data agent built on Convex to keep all government data 
 │  implements the fix, and opens a PR with             │
 │  "Closes #N". Human reviews before merge.            │
 │                                                       │
-│  (Replaces the old processGitHubIssues Convex cron)  │
+│  Data corrections still flow through the 12h          │
+│  github_issues step and LLM Council.                 │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -66,50 +67,52 @@ Mizan uses an AI-powered data agent built on Convex to keep all government data 
 
 | Source | URL | What It Fetches | How |
 |---|---|---|---|
-| World Bank API | api.worldbank.org/v2/country/EGY/indicator/... | External debt, GDP, inflation, unemployment, reserves | Direct API call, parse JSON |
-| IMF DataMapper | imf.org/external/datamapper/api/v1 | GDP, inflation, debt forecasts through 2030 | Direct API call, seeded once |
-| Frankfurter API | api.frankfurter.app | Live USD/EGP exchange rate (daily) | Direct API call |
-| Ministry of Finance | mof.gov.eg/en/open-data | Budget totals (revenue, expenditure, deficit) | Fetch HTML, Claude extracts JSON |
-| Wikipedia (Cabinet) | en.wikipedia.org/wiki/Madbouly_Cabinet | Cabinet minister names and portfolios | Fetch HTML, Claude extracts list |
-| Ahram Online | english.ahram.org.eg/News/562168.aspx | Minister names (fallback) | Fetch HTML, Claude extracts list |
-| parliament.gov.eg | parliament.gov.eg/MembersDetails.aspx?id=N | Individual MP names and details | Batch scrape, regex + Claude |
-| Wikipedia (Parliament) | en.wikipedia.org/wiki/2025_Egyptian_parliamentary_election | Party seat counts | Fetch HTML, Claude extracts |
-| IDA (Egypt) | ida.gov.eg | Industrial investment opportunities | Fetch HTML/JSON, Claude verifies with Zod schema |
-| GAFI | gafi.gov.eg | Free zones and investment areas | Fetch HTML/JSON, Claude verifies with Zod schema |
-| FAO/FAOLEX | faolex.fao.org/docs/pdf/egy127542e.pdf | Constitution full text (247 articles) | pdf-parse extracts text, Claude structures articles |
+| World Bank API | api.worldbank.org/v2/country/EGY/indicator/DT.DOD.DECT.CD | External debt + debt service time series (raw USD) | Direct API call, parse JSON, convert to billions |
+| Ministry of Finance | mof.gov.eg | Budget totals (revenue, expenditure, deficit) | Fetch HTML, LLM extracts JSON |
+| Wikipedia | en.wikipedia.org/wiki/Economy_of_Egypt | Budget data (USD-denominated) | Fetch HTML, LLM extracts structured data |
+| Ahram Online | english.ahram.org.eg/News/562168.aspx | Minister names and titles | Fetch HTML, LLM extracts minister list |
+| IMF DataMapper | imf.org/external/datamapper/api/v1 | GDP growth, inflation, debt projections | Direct API call, parse JSON |
+| ExchangeRate API | open.er-api.com/v6/latest/USD | Live USD/EGP exchange rate | Direct API call |
+| Central Bank of Egypt | cbe.org.eg | T-Bill rates | Fetch HTML, LLM extracts rates |
+| CountryEconomy | countryeconomy.com/stock-exchange/egypt | EGX 30 stock index | Fetch HTML, LLM extracts value |
+| parliament.gov.eg | parliament.gov.eg/MembersDetails.aspx?id=N | Individual MP names and details | Batch scrape, regex + LLM transliteration |
+| Wikipedia (Parliament) | en.wikipedia.org/wiki/2025_Egyptian_parliamentary_election | Party seat counts | Fetch HTML, LLM extracts |
+| IDA | ida.gov.eg | Industrial investment opportunities, complexes | Fetch HTML + web research, LLM extracts structured data |
+| GAFI | gafi.gov.eg | Free zones, investment zones | Fetch HTML + web research, LLM extracts structured data |
+| FAO/FAOLEX | faolex.fao.org/docs/pdf/egy127542e.pdf | Constitution full text (247 articles) | pdf-parse extracts text, LLM structures articles |
 | Constitute Project | constituteproject.org/constitution/Egypt_2019 | Constitution reference/verification | Referenced as data source |
 | RSS / Google News | /api/news proxy (Next.js route) | Egyptian news headlines, bilingual | 7 RSS feeds; LLM web search supplements |
-| GitHub Issues | github.com/Ba3lisa/mizan/issues | Community data corrections | LLM Council verifies; Claude Code Action handles bug/feature labels |
+| GitHub Issues | github.com/Ba3lisa/mizan/issues | Community data corrections | GitHub API + LLM parsing + LLM Council vote |
 
 ## Data Sources by Category
 
 ### Debt Data
-- **Primary**: World Bank API (free, no auth) -- `DT.DOD.DECT.CD` indicator for Egypt
+- **Primary**: World Bank API (free, no auth) -- `DT.DOD.DECT.CD` (debt stock) and `DT.TDS.DECT.CD` (debt service) indicators for Egypt
 - **Secondary**: Central Bank of Egypt (cbe.org.eg) -- quarterly reports
 - **Validation**: IMF country data (imf.org/en/Countries/EGY)
-- **Refresh**: Fully automated via World Bank API. Fetches all available years, converts USD to billions, upserts records. Preserves domestic debt and GDP ratio from existing records when present.
+- **Refresh**: Fully automated via World Bank API. Fetches both debt stock and debt service, converts USD to billions, upserts records. Preserves domestic debt and GDP ratio from existing records when present.
 - **Interest rate data**: The `debtByCreditor` table stores per-creditor terms including `interestRate`, `annualDebtService`, and `maturityYears`. These are backfilled via the `debtInterestData:backfillCreditorTerms` function.
 - **Specific URLs**:
-  - Debt data: `https://api.worldbank.org/v2/country/EGY/indicator/DT.DOD.DECT.CD?format=json`
+  - Debt stock: `https://api.worldbank.org/v2/country/EGY/indicator/DT.DOD.DECT.CD?format=json`
+  - Debt service: `https://api.worldbank.org/v2/country/EGY/indicator/DT.TDS.DECT.CD?format=json`
   - GDP data: `https://api.worldbank.org/v2/country/EGY/indicator/NY.GDP.MKTP.CD?format=json`
   - Reserves: `https://api.worldbank.org/v2/country/EGY/indicator/FI.RES.TOTL.CD?format=json`
 
 ### Budget Data
-- **Primary**: Ministry of Finance open data page (mof.gov.eg/en/open-data)
-- **Parsing**: Claude Haiku 4.5 (`claude-haiku-4-5-20251001`) extracts structured JSON from the page HTML, pulling fiscal year totals for revenue, expenditure, and deficit
+- **Primary**: Ministry of Finance (mof.gov.eg) + Wikipedia Economy of Egypt article
+- **Parsing**: The primary LLM provider extracts structured JSON from MOF and Wikipedia HTML, pulling fiscal year totals for revenue, expenditure, deficit, and GDP. Schemas enforced via `BudgetDataSchema` and `BudgetWikipediaSchema` (see Structured Output Schemas below).
 - **Content hashing**: The agent hashes the fetched page content and stores it in `dataRefreshLog.contentHash`. If the hash matches the previous refresh, parsing is skipped entirely (zero AI cost for unchanged pages)
 - **Validation**: Totals must sum correctly (revenue items = total revenue)
-- **Refresh**: Semi-automated (Claude parses, human reviews changes)
+- **Refresh**: Semi-automated (LLM parses, human reviews changes)
 - **Specific URLs**:
-  - Open data: `https://www.mof.gov.eg/en/open-data`
-  - Budget statements: `https://www.mof.gov.eg/en/posts/statementsAndReports/5`
-  - Financial monthly: `https://www.mof.gov.eg/en/posts/statementsAndReports/6`
+  - Ministry of Finance: `https://www.mof.gov.eg`
+  - Wikipedia (USD-denominated): `https://en.wikipedia.org/wiki/Economy_of_Egypt`
 
 ### Government/Cabinet Data
 - **Primary**: Wikipedia Madbouly Cabinet page -- comprehensive, regularly updated list of all cabinet ministers. Used because cabinet.gov.eg is a JS-rendered SPA inaccessible to server-side fetch.
 - **Fallback**: Ahram Online (english.ahram.org.eg) -- English-language coverage of cabinet reshuffles
-- **Parsing**: Claude Haiku 4.5 extracts minister names and portfolios from the Wikipedia/Ahram HTML
-- **Auto-write**: The government refresh auto-writes via `upsertOfficialAndMinistry` mutation when Claude detects minister changes
+- **Parsing**: The primary LLM provider extracts minister names and portfolios from the Wikipedia/Ahram HTML. Schemas enforced via `CabinetDataSchema` and `GovernorsDataSchema`.
+- **Auto-write**: The government refresh auto-writes via `upsertOfficialAndMinistry` mutation when the LLM detects minister changes
 - **Validation**: Cross-referenced with State Information Service (sis.gov.eg)
 - **Specific URLs**:
   - Wikipedia (primary): `https://en.wikipedia.org/wiki/Madbouly_Cabinet`
@@ -117,8 +120,8 @@ Mizan uses an AI-powered data agent built on Convex to keep all government data 
   - SIS: `https://www.sis.gov.eg/section/352/7510?lang=en`
 
 ### Parliament Data
-- **Composition**: Wikipedia API (2025 Egyptian parliamentary election article) -- party seat counts and election metadata extracted via Claude
-- **Member names**: parliament.gov.eg individual member pages (`/MembersDetails.aspx?id=N`) -- scraped via regex + Claude extraction. The main listing page is a JS-rendered SPA, but individual member detail pages return server-rendered HTML accessible to fetch.
+- **Composition**: Wikipedia API (2025 Egyptian parliamentary election article) -- party seat counts and election metadata extracted via the primary LLM provider. Schema enforced via `ParliamentCompositionSchema`.
+- **Member names**: parliament.gov.eg individual member pages (`/MembersDetails.aspx?id=N`) -- scraped via regex + LLM transliteration. The main listing page is a JS-rendered SPA, but individual member detail pages return server-rendered HTML accessible to fetch.
 - **Pipeline**: The parliament scraper uses Convex scheduler to chain batches (avoids action timeout). Each batch fetches a range of member IDs, extracts names via regex, and upserts records.
 - **Validation**: Member count must equal 596 (House) or 300 (Senate)
 - **Specific URLs**:
@@ -126,9 +129,45 @@ Mizan uses an AI-powered data agent built on Convex to keep all government data 
   - Individual member pages: `https://www.parliament.gov.eg/MembersDetails.aspx?id={N}`
   - Senate: `https://www.senategov.eg/en/Members`
 
+### Economy Data
+- **Primary**: World Bank API (GDP, inflation, unemployment indicators), IMF DataMapper API (projections through 2030)
+- **Exchange rate**: ExchangeRate API (`open.er-api.com/v6/latest/USD`) for live USD/EGP rate
+- **Interest rates**: Central Bank of Egypt T-Bill rates (`cbe.org.eg`), Banque Misr certificate rates
+- **Stock index**: EGX 30 value from CountryEconomy (`countryeconomy.com/stock-exchange/egypt`) and Egyptian Exchange (`egx.com.eg`)
+- **Schemas**: `IMFIndicatorsExtractionSchema`, `InterestRateSchema`, `BankRatesSchema`, `StockIndexSchema`, `EconomicNarrativeSchema`
+- **Specific URLs**:
+  - World Bank indicators: `https://api.worldbank.org/v2/country/EGY/indicator`
+  - IMF DataMapper: `https://www.imf.org/external/datamapper/api/v1`
+  - ExchangeRate API: `https://open.er-api.com/v6/latest/USD`
+  - CBE T-Bills: `https://www.cbe.org.eg/en/economic-research/statistics/egp-t-bills-secondary-market`
+  - Banque Misr: `https://www.banquemisr.com/en/SMEs/Retail-Banking/Accounts-And-Deposits/Certificates`
+  - CountryEconomy: `https://countryeconomy.com/stock-exchange/egypt`
+
+### Governorate Stats Data
+- **Primary**: Wikipedia Governorates of Egypt articles (population, area, HDI rankings)
+- **Schema**: `GovernorateEnrichmentSchema`
+- **Specific URLs**:
+  - Governorates: `https://en.wikipedia.org/wiki/Governorates_of_Egypt`
+  - HDI Rankings: `https://en.wikipedia.org/wiki/List_of_governorates_of_Egypt_by_Human_Development_Index`
+
+### Industry / Investment Data
+- **Primary**: IDA (Industrial Development Authority) -- industrial complexes, investment opportunities map, incentives
+- **Secondary**: GAFI (General Authority for Free Zones and Investment) -- free zones, investment zones
+- **Deep scraping**: Two-pass approach. Pass 1 fetches opportunity listings. Pass 2 enriches with cost estimates, incentive details, and licensing steps using web research via server tools.
+- **Schemas**: `IDAOpportunitiesSchema`, `GAFIOpportunitiesSchema`, `IndustrialBenchmarksSchema`, `CostEstimatesSchema`, `IDAComplexesSchema`, `GAFIZonesSchema`, `InvestmentIncentivesSchema`
+- **Specific URLs**:
+  - IDA main: `https://www.ida.gov.eg`
+  - IDA industrial complexes: `https://www.ida.gov.eg/ar/industrial-complexes`
+  - IDA investment map: `https://www.ida.gov.eg/ar/investmap`
+  - IDA incentives PDF: `https://www.ida.gov.eg/uploads/files/pdfs/QR_PDF/Investment%20incentives%20(english)%202025.pdf`
+  - GAFI free zones: `https://www.gafi.gov.eg/English/StartaBusiness/InvestmentZones/Pages/FreeZones.aspx`
+  - GAFI industrial zones: `https://www.gafi.gov.eg/English/StartaBusiness/InvestmentZones/Pages/Industrial-Zones.aspx`
+  - Golden License Program: `https://www.goldenlicense.gov.eg/`
+  - Invest in Egypt: `https://www.investinegypt.gov.eg/English/pages/sectorandgeographies.aspx`
+
 ### Constitution Data
 - **Primary**: FAO/FAOLEX PDF of the Egyptian constitution
-- **Extraction**: If the database has fewer than 247 articles, the agent downloads the PDF from `faolex.fao.org/docs/pdf/egy127542e.pdf`, extracts text using `pdf-parse`, then sends the raw text to Claude to structure it into individual articles with part/chapter grouping
+- **Extraction**: If the database has fewer than 247 articles, the agent downloads the PDF from `faolex.fao.org/docs/pdf/egy127542e.pdf`, extracts text using `pdf-parse`, then sends the raw text to the primary LLM provider to structure it into individual articles with part/chapter grouping. Schema enforced via `ConstitutionExtractionSchema`.
 - **Secondary reference**: Constitute Project (`constituteproject.org/constitution/Egypt_2019`)
 - **Validation**: Article count must equal 247
 - **Refresh**: Only triggered when article count is below 247 (effectively a one-time load)
@@ -178,9 +217,9 @@ Located in `convex/agents/validators.ts`:
 |-----------|---------------|
 | `validateBudgetTotals` | Budget items sum to expected total (±0.01 tolerance) |
 | `validateParliamentCounts` | House = 596, Senate = 300 |
-| `validateDebtRecord` | No negative values, GDP ratio < 200% |
+| `validateDebtRecord` | No negative values, GDP ratio < 500% (wide safety band) |
 | `parseWorldBankResponse` | Parses World Bank API v2 format, filters nulls |
-| `extractClaudeText` | Extracts text from Claude API response |
+| `extractClaudeText` | Extracts text from Anthropic Claude API response |
 
 ## Data Refresh Log
 
@@ -188,7 +227,7 @@ Every refresh operation is logged to the `dataRefreshLog` table:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `category` | string | "government", "parliament", "budget", "debt", "constitution", "all" |
+| `category` | string | "government", "parliament", "budget", "debt", "economy", "governorate_stats", "industry", "constitution", "all" |
 | `status` | string | "in_progress", "success", "failed" |
 | `recordsUpdated` | number | How many records changed |
 | `sourceUrl` | string | Which URL was fetched |
@@ -204,7 +243,6 @@ Every refresh operation is logged to the `dataRefreshLog` table:
 | `getLastUpdated` | `dataRefresh.ts` | Get last successful refresh time for a category |
 | `getAllLastUpdated` | `dataRefresh.ts` | Get freshness status for all categories |
 | `getRefreshHistory` | `dataRefresh.ts` | Get last N refresh attempts for a category |
-| `getDataSourceInfo` | Per-module | Get source URLs and names for display |
 
 ## Content Hashing
 
@@ -213,26 +251,158 @@ To avoid unnecessary AI API calls, the pipeline uses content hashing on fetched 
 1. When a page is fetched (e.g., the MOF open data page), the raw HTML is SHA-256 hashed
 2. The hash is stored in the `dataRefreshLog` record's `contentHash` field
 3. On the next refresh cycle, the agent fetches the page again and computes a new hash
-4. If the hash matches the previous successful refresh, Claude parsing is skipped entirely
+4. If the hash matches the previous successful refresh, LLM parsing is skipped entirely
 5. This means unchanged pages cost zero AI tokens -- only the HTTP fetch is performed
 
 This is particularly valuable for the budget page, which may only change once per fiscal year but is checked every 12 hours.
 
+## LLM Provider Registry
+
+Located in `convex/agents/providers/registry.ts`. The pipeline is provider-agnostic -- it routes all LLM calls through a registry that auto-detects available providers from environment variables.
+
+### Priority Order
+
+| Priority | Provider | Env Var | Default Model | Server Tools (web search) |
+|----------|----------|---------|---------------|--------------------------|
+| 1 | xAI (Grok) | `XAI_API_KEY` | `grok-4-1-fast-reasoning` | Yes (Responses API) |
+| 2 | OpenAI | `OPENAI_API_KEY` | `gpt-4o-mini` | No |
+| 3 | Anthropic (Claude) | `ANTHROPIC_API_KEY` | `claude-haiku-4-5-20251001` | Yes (web_search + web_fetch) |
+| 4 | Google (Gemini) | `GOOGLE_AI_API_KEY` | `gemini-2.0-flash` | No |
+| 5 | OpenRouter | `OPENROUTER_API_KEY` | `meta-llama/llama-4-scout` | No |
+
+### Routing
+
+- **Pipeline operations**: Uses the highest-priority available provider (`getPrimaryProvider()`).
+- **LLM Council votes**: Uses ALL available providers -- each casts an independent vote.
+- **Server tools (web search)**: Routes to the highest-priority provider that supports them (currently xAI or Anthropic).
+
+### Provider Interface
+
+Every provider implements the `LLMProvider` interface defined in `convex/agents/providers/types.ts`:
+
+| Method | Description |
+|--------|-------------|
+| `callLLM` | Basic text completion |
+| `callLLMStructured<T>` | Structured output via tool_use / function calling |
+| `evaluateDataChange` | Council vote evaluation |
+| `callLLMWithUsage` | Text completion with token usage tracking |
+| `callLLMStructuredWithUsage<T>` | Structured output with usage tracking |
+| `callLLMWithServerTools` | Text completion with server-side tools (web search) |
+| `callLLMWebResearchStructured<T>` | Two-step: web research then structured parsing |
+
+### Provider Files
+
+| File | Provider |
+|------|----------|
+| `convex/agents/providers/xai.ts` | xAI Grok (chat completions + Responses API) |
+| `convex/agents/providers/openai.ts` | OpenAI GPT (chat completions + function calling) |
+| `convex/agents/providers/anthropic.ts` | Anthropic Claude (messages API + tool_use + server tools) |
+| `convex/agents/providers/google.ts` | Google Gemini (generateContent + function calling) |
+| `convex/agents/providers/openrouter.ts` | OpenRouter (OpenAI-compatible API, any model) |
+| `convex/agents/providers/types.ts` | Shared TypeScript interfaces |
+| `convex/agents/providers/registry.ts` | Auto-detection, routing, and convenience wrappers |
+| `convex/agents/providers/councilPrompt.ts` | Shared council evaluation prompt |
+
+## Structured Output Schemas
+
+Located in `convex/agents/schemas.ts`. Every LLM call in the pipeline uses a Zod schema from this file. The schemas serve three purposes:
+
+1. **Generate JSON Schema** for structured LLM output (tool_use / function calling)
+2. **Runtime validation** of LLM responses before upserting to Convex
+3. **TypeScript type inference** for pipeline code
+
+### Schema Catalog
+
+| Schema | Category | Fields |
+|--------|----------|--------|
+| `BudgetDataSchema` | Budget | fiscalYear, totalRevenue, totalExpenditure, deficit, gdp, sourceUrl |
+| `BudgetWikipediaSchema` | Budget | fiscalYear, revenueUsd, expenditureUsd, deficitUsd, gdpNominalUsd |
+| `CabinetDataSchema` | Government | officials[] (nameEn, nameAr, titleEn, titleAr, role, ministry) |
+| `GovernorsDataSchema` | Government | governors[] (nameEn, nameAr, titleEn, titleAr, governorate) |
+| `ParliamentCompositionSchema` | Parliament | parties[] (nameEn, nameAr, seats, color, isRuling), totalSeats |
+| `NameTransliterationSchema` | Parliament | translations[] (id, nameEn) |
+| `IMFIndicatorsExtractionSchema` | Economy | indicators[] (indicator, data: year→value) |
+| `InterestRateSchema` | Economy | rate, tenor, date, sourceUrl |
+| `BankRatesSchema` | Economy | oneYear, threeYear, savingsRate, sourceUrl |
+| `StockIndexSchema` | Economy | value, change, changePercent, date |
+| `EconomicNarrativeSchema` | Economy | titleEn/Ar, summaryEn/Ar, insights[] |
+| `ConstitutionExtractionSchema` | Constitution | articles[] (articleNumber, textEn, textAr, part, chapter) |
+| `IDAOpportunitiesSchema` | Industry | opportunities[] (externalId, name, sector, governorate, cost, area) |
+| `GAFIOpportunitiesSchema` | Industry | opportunities[] (externalId, name, type, governorate, cost) |
+| `IndustrialBenchmarksSchema` | Industry | benchmarks (land, construction, labor, utility costs by region) |
+| `CostEstimatesSchema` | Industry | estimates[] (nameEn, costEgp, breakdown, methodology) |
+| `IDAComplexesSchema` | Industry | complexes[] + incentives (sectorA/B) |
+| `GAFIZonesSchema` | Industry | freeZones[] + registrationFees + investmentLaw |
+| `InvestmentIncentivesSchema` | Industry | generalIncentives, sectorA/B, licensingSteps[], freeZoneBenefits |
+| `GovernorateEnrichmentSchema` | Governorate | governorates[] (population, area, hdi, unemployment, literacy) |
+| `CouncilVoteSchema` | Council | vote, confidence, reasoning, sourceVerified |
+| `GitHubIssueClassificationSchema` | GitHub | valid, reason, page, dataPoint, sourceUrl, confidence |
+| `NewsExtractionSchema` | News | headlines[] (titleEn/Ar, category, sourceUrl) |
+| `RawNewsListSchema` | News | items[] (title, url, source) |
+
+### Zod-to-JSON-Schema Conversion
+
+The `zodToToolSchema()` utility in `schemas.ts` converts Zod schemas to the JSON Schema format required by LLM function calling / tool_use APIs. This is used by all providers.
+
+## Output Verification
+
+Located in `convex/agents/verify.ts`. All LLM responses pass through verification before being written to Convex.
+
+### Functions
+
+| Function | Description |
+|----------|-------------|
+| `verifyLLMOutput(schema, raw, category)` | Validates parsed JSON against a Zod schema. Returns typed data or error with details. |
+| `parseAndVerify(text, schema, category)` | Parses free-form LLM text into JSON (handles markdown fences, prose wrapping), then validates against schema. |
+
+### Verification Flow
+
+1. LLM returns structured output (via tool_use / function calling) or free-form text
+2. For structured output: `verifyLLMOutput()` validates directly against the Zod schema
+3. For free-form text: `parseAndVerify()` strips markdown fences, extracts JSON, then validates
+4. On success: returns typed `{ ok: true, data: T }`
+5. On failure: returns `{ ok: false, errors: string[], raw: unknown }` with per-field error messages
+6. All results are logged with `[verify/<category>]` prefix for audit trail
+
+## Token Cost Tracking
+
+Located in `convex/lib/tokenCost.ts`. Tracks estimated USD cost per LLM call based on model pricing.
+
+### Supported Models and Pricing (per 1M tokens)
+
+| Model | Input | Output |
+|-------|-------|--------|
+| `grok-4-1-fast-reasoning` | $0.20 | $0.50 |
+| `grok-4-1-fast-non-reasoning` | $0.20 | $0.50 |
+| `grok-4.20-0309-non-reasoning` | $2.00 | $6.00 |
+| `claude-haiku-4-5-20251001` | $0.80 | $3.20 |
+| `claude-sonnet-4-20250514` | $3.00 | $15.00 |
+| `gpt-4o-mini` | $0.15 | $0.60 |
+| `gpt-4o` | $2.50 | $10.00 |
+| `gpt-5.4-mini` | $0.20 | $0.80 |
+| `gemini-2.0-flash` | $0.075 | $0.30 |
+| `meta-llama/llama-4-scout` | $0.15 | $0.60 |
+
+Usage is logged to the `apiUsageLog` table via `internal.usage.logApiUsage` after each LLM call, including provider name, model, token counts, estimated cost, and duration.
+
 ## Setup
 
-1. Set `ANTHROPIC_API_KEY` in Convex dashboard (Settings -> Environment Variables)
-2. The model used is `claude-haiku-4-5-20251001` (Claude Haiku 4.5) for all data extraction tasks
-3. Without the key, World Bank API data still refreshes (no auth needed), but Claude-powered parsing is skipped
-4. Cron job runs automatically every 12 hours
-5. Manual trigger (public action): `npx convex run agents/dataAgent:triggerRefresh`
-   (also available as internal: `npx convex run agents/dataAgent:orchestrateRefresh`)
+1. Set at least one LLM API key in Convex dashboard (Settings -> Environment Variables). Priority order: `XAI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_AI_API_KEY`, `OPENROUTER_API_KEY`
+2. The model used depends on which provider is configured -- see LLM Provider Registry above for defaults
+3. For multi-model LLM Council voting, set multiple API keys (each provider casts an independent vote)
+4. Without any API key, World Bank/IMF API data still refreshes (no auth needed), but LLM-powered parsing is skipped
+5. Cron job runs automatically every 12 hours
+6. Manual trigger (internal): `npx convex run agents/dataAgent:orchestrateRefresh`
+7. Manual trigger (public action): `npx convex run agents/dataAgent:triggerRefresh` -- schedules the internal orchestrator via `ctx.scheduler.runAfter(0, ...)`
 
 ## Graceful Degradation
 
-- If Claude API key is missing → skip AI parsing, log warning, use cached data
+- If no LLM API key is configured → skip AI parsing, log warning, use cached data
+- If the primary LLM provider fails → error is logged, but other categories continue (each category is independent)
 - If World Bank API is down → log failure, retain existing data
 - If a government website is unreachable → log failure, flag for human review
-- If validation fails → reject the data, keep existing records, log discrepancy
+- If Zod schema validation fails → reject the LLM output, keep existing records, log per-field errors
+- If `DISABLE_CRONS=true` is set → orchestrator exits immediately without running any refreshes
 
 ## Alerting
 
@@ -240,7 +410,7 @@ A GitHub Actions workflow (`health-check.yml`) runs every 12 hours and checks th
 
 ## Log Compaction
 
-A daily cron job deletes `dataRefreshLog` entries older than 30 days to prevent unbounded table growth. This runs independently of the 12-hour refresh cycle.
+A daily cron job (`agents/maintenance.compactRefreshLogs`) deletes `dataRefreshLog` entries older than 30 days to prevent unbounded table growth. This runs independently of the 12-hour refresh cycle.
 
 ## Sanad Reference Confidence System
 
@@ -304,7 +474,7 @@ The LLM Council is a multi-model voting system that verifies community-submitted
 
 ### Current Configuration
 
-The council now runs on multiple providers in priority order: xAI Grok (`grok-4-1-fast-reasoning`), OpenAI, Anthropic Claude, Google, and OpenRouter. The priority chain falls back automatically if a provider's API key is not set. This enables true multi-model consensus voting across independent model families.
+The council uses ALL available LLM providers to cast independent votes. Each provider configured via environment variable participates automatically. Currently supported providers: xAI (Grok), OpenAI (GPT), Anthropic (Claude), Google (Gemini), and OpenRouter (any model). Every provider implements `evaluateDataChange()` using the shared `CouncilVoteSchema` (Zod-validated structured output) and `councilPrompt.ts` for consistent evaluation criteria.
 
 ### Source Classification
 
@@ -356,10 +526,12 @@ Certain data categories always require human approval, even if the council unani
 
 To add a new LLM provider:
 
-1. Create a new file in `convex/agents/providers/` (e.g., `openai.ts`)
-2. Implement the `evaluateDataChange()` function:
-   - Input: proposed change, source URL, current database value, data category
-   - Output: vote (`approve` / `reject` / `abstain`), confidence score (0-1), reasoning text
-3. Register the provider in `convex/agents/providers/registry.ts`
-4. Set the provider's API key as a Convex environment variable
-5. The orchestrator will automatically include the new provider in all future council sessions
+1. Create a new file in `convex/agents/providers/` (e.g., `newprovider.ts`)
+2. Implement the `LLMProvider` interface from `convex/agents/providers/types.ts`, including:
+   - `callLLM`, `callLLMStructured`, `callLLMWithUsage`, `callLLMStructuredWithUsage`
+   - `evaluateDataChange()` using the shared `CouncilVoteSchema` from `convex/agents/schemas.ts` and `buildCouncilPrompt()` from `convex/agents/providers/councilPrompt.ts`
+   - Output: vote (`approve` / `reject` / `abstain`), confidence (`high` / `medium` / `low`), reasoning text, sourceVerified boolean
+3. Add the provider to the `PROVIDER_REGISTRY` array in `convex/agents/providers/registry.ts` with its env var key, default model, and priority position
+4. Add the provider's model(s) to `convex/lib/tokenCost.ts` for cost tracking
+5. Set the provider's API key as a Convex environment variable
+6. The registry will automatically include the new provider in pipeline operations and council sessions

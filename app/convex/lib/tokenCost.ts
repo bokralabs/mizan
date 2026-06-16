@@ -11,6 +11,9 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   "meta-llama/llama-4-scout": { input: 0.15, output: 0.60 },
   "gpt-5.4-mini": { input: 0.20, output: 0.80 },
   "gpt-4.1-mini": { input: 0.40, output: 1.60 },
+  "deepseek-v4-flash": { input: 0.14, output: 0.28 },
+  "deepseek-v4-pro": { input: 0.435, output: 0.87 },
+  "deepseek-chat": { input: 0.14, output: 0.28 },
 };
 
 export function estimateCost(model: string, inputTokens: number, outputTokens: number): number {

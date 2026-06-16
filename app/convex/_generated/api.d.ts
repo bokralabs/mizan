@@ -75,6 +75,9 @@ import type * as taxData from "../taxData.js";
 import type * as testFetch from "../testFetch.js";
 import type * as tools from "../tools.js";
 import type * as transparency from "../transparency.js";
+import type * as uiAgent from "../uiAgent.js";
+import type * as uiChat from "../uiChat.js";
+import type * as uiData from "../uiData.js";
 import type * as usage from "../usage.js";
 
 import type {
@@ -151,6 +154,9 @@ declare const fullApi: ApiFromModules<{
   testFetch: typeof testFetch;
   tools: typeof tools;
   transparency: typeof transparency;
+  uiAgent: typeof uiAgent;
+  uiChat: typeof uiChat;
+  uiData: typeof uiData;
   usage: typeof usage;
 }>;
 

@@ -29,19 +29,60 @@
 2. Source directory: /app
 3. Build command: `npm ci --legacy-peer-deps && npm run build`
 4. Run command: `npm start`
-5. Environment variables:
+5. Environment variables (configured in `.do/app.yaml`):
    - `NEXT_PUBLIC_CONVEX_URL` = production Convex URL
    - `NODE_ENV` = production
-6. Add custom domain: mizanmasr.com
+6. Instance: `professional-xs`, region `fra`, HTTP port 3000
+7. Add custom domain: mizanmasr.com
+8. Health check: `GET /` with 10s initial delay, 30s period
 
 ## Convex Production
 
-1. Create production deployment: `npx convex deploy --prod`
+1. Deploy Convex functions and Next.js together:
+   ```bash
+   npx convex deploy --cmd 'npm run build'
+   ```
+   The CI workflow (`deploy.yml`) runs this automatically on each release. The `--cmd` flag builds the Next.js app after pushing Convex functions, ensuring `NEXT_PUBLIC_CONVEX_URL` is available at build time.
+
 2. Set environment variables in Convex dashboard:
-   - `ANTHROPIC_API_KEY` = (your key) -- used with model `claude-haiku-4-5-20251001` (Claude Haiku 4.5) for all data extraction and LLM Council tasks
+
+   **LLM providers (at least one required for the data pipeline):**
+   The pipeline uses a provider registry (`convex/agents/providers/registry.ts`) that picks the highest-priority available key. The LLM Council uses ALL configured providers (each casts a vote). Priority order:
+   - `XAI_API_KEY` -- Grok (highest priority)
+   - `OPENAI_API_KEY` -- GPT-4o-mini (also required for the guide chat agent, which uses `gpt-4.1-mini` via `@ai-sdk/openai`)
+   - `ANTHROPIC_API_KEY` -- Claude Haiku 4.5
+   - `GOOGLE_AI_API_KEY` -- Gemini 2.0 Flash
+   - `OPENROUTER_API_KEY` -- any model via OpenRouter
+   - `OPENROUTER_MODEL` -- (optional) override the default OpenRouter model
+
+   **Other keys:**
    - `GITHUB_TOKEN` = GitHub personal access token with `issues:write` permission on `Ba3lisa/mizan` (required for the GitHub Issues AI agent to read and comment on community data corrections)
+
+   **Dev-only:**
+   - `DISABLE_CRONS=true` -- set in dev deployment to skip all cron jobs
+
 3. The 12-hour cron job will start automatically
-4. Seed production data: `npx convex run --prod seedData:seed`
+
+4. Seed production data:
+   ```bash
+   npx convex run --prod seedData:seedAll
+   ```
+   (`seedAll` is the public mutation wrapper; `seed` is internal-only)
+
+5. Manually trigger a pipeline refresh:
+   ```bash
+   npx convex run --prod agents/dataAgent:triggerRefresh
+   ```
+   This public action schedules `orchestrateRefresh` to run immediately.
+
+### Convex Components (convex.config.ts)
+
+The app registers two Convex components:
+
+- **`@convex-dev/agent`** -- powers the guide chat agent (`guideActions.ts`) and provides message storage, threading, and streaming
+- **`@convex-dev/rate-limiter`** -- enforces per-session rate limits on guide chat (1 msg/3s, ~10K tokens/hour)
+
+These are declared in `convex/convex.config.ts` via `app.use(agent)` and `app.use(rateLimiter)`.
 
 ### External Dependencies (convex.json)
 
@@ -62,6 +103,43 @@ The `GITHUB_TOKEN` is used by `convex/agents/githubAgent.ts` to:
 
 Create a fine-grained personal access token at https://github.com/settings/tokens and grant it **Read and Write** access to Issues on the `Ba3lisa/mizan` repository. If the token is absent the GitHub agent skips all operations gracefully without failing.
 
+## CI/CD Workflows
+
+All workflows use Node.js 22 and are defined in `.github/workflows/`.
+
+### deploy.yml -- Deploy to Production
+
+Triggered on: GitHub release published, or manual `workflow_dispatch`.
+
+Jobs (sequential):
+1. **lint-and-typecheck** -- `npm run lint` + `npm run type-check` (`tsc --noEmit`)
+2. **deploy-convex** -- `npx convex deploy --cmd 'npm run build'` (uses `CONVEX_DEPLOY_KEY` and `NEXT_PUBLIC_CONVEX_URL` secrets; sets `NEXT_PUBLIC_APP_VERSION` from the release tag or commit SHA)
+3. **deploy-app** -- triggers DigitalOcean App Platform deploy via `digitalocean/app_action/deploy@v2`
+
+### lint.yml -- CI
+
+Triggered on: push to `main`, pull requests (opened/synchronize/reopened/ready_for_review). Skips draft PRs.
+
+Steps: install, ESLint (0 warnings), TypeScript (0 errors), `next build`.
+
+### security.yml -- Security Scan
+
+Triggered on: PRs, push to `main`, weekly schedule (Monday 6am).
+
+Jobs: `npm audit`, CodeQL analysis, custom pattern checks (eval, dangerouslySetInnerHTML, dynamic fetch URLs, template literals in DB queries).
+
+### secret-scan.yml -- Secret Scan
+
+Triggered on: push to `main`, PRs.
+
+Scans for leaked Convex deploy keys, Anthropic/GitHub/Slack tokens, and private keys.
+
+### health-check.yml -- Pipeline Health Check
+
+Triggered on: schedule (every 12h at 6am/6pm UTC), or manual `workflow_dispatch`.
+
+Queries `dataRefresh:getAllLastUpdated` against the production Convex deployment. If any data category is stale (>48h), opens or updates a GitHub issue with the `pipeline-health` label. Auto-closes the issue when all categories are fresh.
+
 ## GitHub Secrets Required
 
 Set these in Ba3lisa/mizan -> Settings -> Secrets:
@@ -71,3 +149,5 @@ Set these in Ba3lisa/mizan -> Settings -> Secrets:
 | `NEXT_PUBLIC_CONVEX_URL` | Production Convex URL from Convex dashboard |
 | `CONVEX_DEPLOY_KEY` | Convex dashboard -> Settings -> Deploy key |
 | `DIGITALOCEAN_ACCESS_TOKEN` | DigitalOcean -> API -> Personal access tokens |
+
+Note: `NEXT_PUBLIC_APP_VERSION` is set automatically by the deploy workflow from the release tag (or commit SHA as fallback). It does not need to be configured as a secret.

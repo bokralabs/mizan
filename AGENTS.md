@@ -28,6 +28,14 @@ Before changing application or Convex code, read:
 - Keep data-backed UI truthful: numbers that should come from Convex or a cited source must not be hardcoded.
 - Ask before destructive operations, schema migrations, production deploys, or environment-switching commands.
 
+## Generative UI Runtime
+
+- For Mizan's home generative interface, use the repo skill at `.agents/skills/mizan-generative-ui` when touching the planner, renderer, chat flow, or Storybook blocks.
+- Treat the LLM as a planner, not a JSX author. The model emits typed grid notation and deterministic React/shadcn components render it.
+- Preserve page state across chat turns. Follow-ups should append, update, or focus existing UI unless the user explicitly asks to reset or start a new page.
+- Keep visible model progress as short status labels. Do not expose hidden chain-of-thought.
+- Animate with `transform` and `opacity` first. Avoid per-block scroll loops, width/height animation, or layout-thrashing effects.
+
 ## Subagents
 
 This repo supports project-scoped Codex subagents through `.codex/agents/`.
