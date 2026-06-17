@@ -5,7 +5,7 @@ import { z } from "zod";
 import { buildMizanCapabilityContext } from "@/lib/mizan-capability-catalog";
 import {
   MIZAN_GENERATIVE_CATALOG_PROMPT,
-  ensureInvestmentToolLaunch,
+  ensureInvestmentSimulator,
   langSchema,
   looseMizanJsonSpecSchema,
   makePromptFallbackSpec,
@@ -258,6 +258,7 @@ function isInvestmentSpec(spec: ReturnType<typeof normalizeMizanSpec>): boolean 
   const values = Object.values(spec.elements);
   const hasInvestmentPrimitive = values.some((item) => (
     item.type === "IndicatorStrip"
+    || item.type === "ToolSimulator"
     || item.type === "ToolLaunch"
     || (item.type === "SourceList" && item.props.sources.includes("investmentIndicators"))
     || (item.type === "ActionLinks" && item.props.links.some((link) => link.href === "/tools/invest" || link.href === "/tools/mashroaak"))
@@ -324,7 +325,7 @@ export async function POST(request: Request) {
     if (hasInvestmentIntent(body.prompt) && !isInvestmentSpec(responseSpec)) {
       responseSpec = makePromptFallbackSpec(body.lang, body.prompt);
     }
-    responseSpec = ensureInvestmentToolLaunch(responseSpec, body.prompt, body.lang);
+    responseSpec = ensureInvestmentSimulator(responseSpec, body.prompt, body.lang);
 
     return NextResponse.json(responsePayloadForSpec(responseSpec, provider, modelName, result.usage));
   } catch {

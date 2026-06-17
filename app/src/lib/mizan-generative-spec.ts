@@ -136,19 +136,29 @@ const actionLinksPropsSchema = z.object({
   })).min(1).max(4),
 });
 
+const toolInputsSchema = z.object({
+  capitalEgp: z.number().positive().max(1_000_000_000).optional(),
+  horizonYears: z.number().int().min(1).max(30).optional(),
+  strategy: investmentStrategySchema.optional(),
+  inflationPct: z.number().min(0).max(100).optional(),
+  egpDepreciationPct: z.number().min(0).max(100).optional(),
+}).default({});
+
+const toolSimulatorPropsSchema = z.object({
+  title: z.string().min(2).max(90),
+  description: z.string().min(2).max(260),
+  tool: z.literal("simulate_egypt_investment"),
+  mode: z.enum(["simulate", "compare"]).default("simulate"),
+  inputs: toolInputsSchema,
+});
+
 const toolLaunchPropsSchema = z.object({
   title: z.string().min(2).max(90),
   description: z.string().min(2).max(260),
   tool: z.literal("simulate_egypt_investment"),
   href: z.literal("/tools/invest"),
   cta: z.string().min(2).max(64),
-  inputs: z.object({
-    capitalEgp: z.number().positive().max(1_000_000_000).optional(),
-    horizonYears: z.number().int().min(1).max(30).optional(),
-    strategy: investmentStrategySchema.optional(),
-    inflationPct: z.number().min(0).max(100).optional(),
-    egpDepreciationPct: z.number().min(0).max(100).optional(),
-  }).default({}),
+  inputs: toolInputsSchema,
 });
 
 const suggestionsPropsSchema = z.object({
@@ -175,6 +185,7 @@ export const mizanElementSchema = z.discriminatedUnion("type", [
   element("InsightList", insightListPropsSchema),
   element("Callout", calloutPropsSchema),
   element("ActionLinks", actionLinksPropsSchema),
+  element("ToolSimulator", toolSimulatorPropsSchema),
   element("ToolLaunch", toolLaunchPropsSchema),
   element("Suggestions", suggestionsPropsSchema),
 ]);
@@ -187,7 +198,7 @@ export const mizanJsonSpecSchema = z.object({
 
 export type MizanJsonSpec = z.infer<typeof mizanJsonSpecSchema>;
 export type MizanElement = z.infer<typeof mizanElementSchema>;
-type ToolLaunchInputs = z.infer<typeof toolLaunchPropsSchema>["inputs"];
+type ToolSimulatorInputs = z.infer<typeof toolInputsSchema>;
 
 function fallbackSuggestionPrompts(elements: MizanJsonSpec["elements"], lang: Lang): string[] {
   const ar = lang === "ar";
@@ -205,6 +216,8 @@ function fallbackSuggestionPrompts(elements: MizanJsonSpec["elements"], lang: La
   const hasGovernment = Object.values(elements).some((item) => item.type === "EntityGrid");
   const hasInvestment = Object.values(elements).some((item) => (
     item.type === "IndicatorStrip"
+    || item.type === "ToolSimulator"
+    || item.type === "ToolLaunch"
     || (item.type === "SourceList" && item.props.sources.includes("investmentIndicators"))
   ));
 
@@ -325,9 +338,13 @@ export const mizanJsonCatalog = defineCatalog(jsonRenderReactSchema, {
       props: actionLinksPropsSchema,
       description: "Links to first-party Mizan pages and tools.",
     },
+    ToolSimulator: {
+      props: toolSimulatorPropsSchema,
+      description: "Inline first-party simulator with deterministic controls and sourced defaults.",
+    },
     ToolLaunch: {
       props: toolLaunchPropsSchema,
-      description: "A safe first-party tool handoff with prefilled inputs. The renderer builds the URL.",
+      description: "Legacy first-party tool handoff. Prefer ToolSimulator for new investment scenarios.",
     },
     Suggestions: {
       props: suggestionsPropsSchema,
@@ -358,7 +375,7 @@ Allowed components:
 - InsightList({ title, items: [{ label, metric, note }] }) for compact analysis. Use metric keys for numeric anchors.
 - Callout({ title, body, tone }) for limitations or explanation.
 - ActionLinks({ title, links: [{ label, href, description }] }) for first-party navigation.
-- ToolLaunch({ title, description, tool: "simulate_egypt_investment", href: "/tools/invest", cta, inputs }) for opening Mizan's investment simulator with prefilled inputs.
+- ToolSimulator({ title, description, tool: "simulate_egypt_investment", mode, inputs }) for rendering Mizan's investment simulator inline with prefilled inputs. Use mode "compare" when the user asks to compare scenarios, strategies, nominal vs real return, or returns vs inflation.
 - Suggestions({ prompts }) for 2-4 follow-up prompts.
 
 Rules:
@@ -370,7 +387,7 @@ Rules:
 - Do not invent numbers. Use MetricCard/InsightList metric keys and the renderer will read values from Mizan data.
 - Use SourceList when the user asks about trust, source quality, or wants citations.
 - For investment prompts, render scenario/risk/indicator context with IndicatorStrip, InsightList, SourceList, and Callout. Do not recommend a specific investment or allocation.
-- For investment scenario prompts that include amount, horizon, simulation, testing, or comparison language, include ToolLaunch and prefill any available inputs.
+- For investment scenario prompts that include amount, horizon, simulation, testing, or comparison language, include ToolSimulator and prefill any available inputs. Do not link out to tools for these prompts.
 - Use ActionLinks only when a first-party Mizan tool or page is a useful next action. Do not make routes, paths, or selectors the answer.
 - For follow-ups, preserve useful existing intent and add/update only what the user asked for unless they request reset.
 - Suggestions must feel like natural follow-up questions specific to the rendered view, not generic workflow steps.
@@ -720,9 +737,9 @@ function numberFromUnknown(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function toolLaunchInputs(value: unknown): ToolLaunchInputs {
+function toolSimulatorInputs(value: unknown): ToolSimulatorInputs {
   const raw = isRecord(value) ? value : {};
-  const inputs: ToolLaunchInputs = {};
+  const inputs: ToolSimulatorInputs = {};
   const capitalEgp = numberFromUnknown(raw.capitalEgp);
   const horizonYears = numberFromUnknown(raw.horizonYears);
   const inflationPct = numberFromUnknown(raw.inflationPct);
@@ -794,8 +811,8 @@ function parsePromptStrategy(prompt: string): z.infer<typeof investmentStrategyS
   return undefined;
 }
 
-function extractInvestmentScenarioInputs(prompt: string): ToolLaunchInputs {
-  const inputs: ToolLaunchInputs = {};
+function extractInvestmentScenarioInputs(prompt: string): ToolSimulatorInputs {
+  const inputs: ToolSimulatorInputs = {};
   const capitalEgp = parsePromptAmount(prompt);
   const horizonYears = parsePromptHorizon(prompt);
   const strategy = parsePromptStrategy(prompt);
@@ -813,6 +830,10 @@ function hasInvestmentScenarioRequest(prompt: string): boolean {
     || /\b(test|simulate|scenario|project|projection|try|run)\b|اختبر|حاكي|سيناريو|جرّب|جرب/.test(prompt.toLowerCase());
 }
 
+function hasInvestmentComparisonRequest(prompt: string): boolean {
+  return /\b(compare|comparison|versus|vs|against|real return|inflation-adjusted|nominal|side by side|side-by-side)\b|قارن|مقارنة|مقابل|جنب/.test(prompt.toLowerCase());
+}
+
 function formatScenarioAmount(amount: number | undefined, lang: Lang): string | null {
   if (amount === undefined) return null;
   const compact = amount >= 1_000_000
@@ -823,7 +844,7 @@ function formatScenarioAmount(amount: number | undefined, lang: Lang): string | 
   return lang === "ar" ? `${compact} جنيه` : `EGP ${compact}`;
 }
 
-function scenarioDescription(inputs: ToolLaunchInputs, lang: Lang): string {
+function scenarioDescription(inputs: ToolSimulatorInputs, lang: Lang): string {
   const amount = formatScenarioAmount(inputs.capitalEgp, lang);
   const horizon = inputs.horizonYears
     ? (lang === "ar" ? `${inputs.horizonYears} سنوات` : `${inputs.horizonYears} years`)
@@ -831,25 +852,24 @@ function scenarioDescription(inputs: ToolLaunchInputs, lang: Lang): string {
   const parts = [amount, horizon].filter((part): part is string => part !== null);
   if (parts.length === 0) {
     return lang === "ar"
-      ? "افتح محاكي الاستثمار واضبط السيناريو مباشرة."
-      : "Open the investment simulator and adjust the scenario directly.";
+      ? "اضبط السيناريو داخل اللوحة وقارن العائد الاسمي والحقيقي."
+      : "Adjust the scenario in this board and compare nominal and real outcomes.";
   }
   return lang === "ar"
-    ? `افتح محاكي الاستثمار بالقيم المبدئية: ${parts.join("، ")}.`
-    : `Open the investment simulator prefilled with ${parts.join(" over ")}.`;
+    ? `محاكاة مبدئية بالقيم: ${parts.join("، ")}.`
+    : `Inline scenario prefilled with ${parts.join(" over ")}.`;
 }
 
-function investmentToolLaunch(lang: Lang, prompt: string): Extract<MizanElement, { type: "ToolLaunch" }> {
+function investmentToolSimulator(lang: Lang, prompt: string): Extract<MizanElement, { type: "ToolSimulator" }> {
   const ar = lang === "ar";
   const inputs = extractInvestmentScenarioInputs(prompt);
   return {
-    type: "ToolLaunch",
+    type: "ToolSimulator",
     props: {
-      title: ar ? "اختبر السيناريو في المحاكي" : "Test this in the simulator",
+      title: ar ? "محاكي الاستثمار" : "Investment simulator",
       description: scenarioDescription(inputs, lang),
       tool: "simulate_egypt_investment",
-      href: "/tools/invest",
-      cta: ar ? "افتح المحاكي" : "Open simulator",
+      mode: hasInvestmentComparisonRequest(prompt) ? "compare" : "simulate",
       inputs,
     },
   };
@@ -1017,6 +1037,20 @@ function coerceElement(
     };
   }
 
+  if (type === "ToolSimulator") {
+    return {
+      type,
+      props: {
+        title: textProp(props, "title", ar ? "محاكي الاستثمار" : "Investment simulator"),
+        description: textProp(props, "description", ar ? "اضبط سيناريو الاستثمار داخل اللوحة." : "Adjust the investment scenario inside this board."),
+        tool: "simulate_egypt_investment",
+        mode: enumProp(z.enum(["simulate", "compare"]), props.mode, "simulate"),
+        inputs: toolSimulatorInputs(props.inputs),
+      },
+      children,
+    };
+  }
+
   if (type === "ToolLaunch") {
     return {
       type,
@@ -1026,7 +1060,7 @@ function coerceElement(
         tool: "simulate_egypt_investment",
         href: "/tools/invest",
         cta: textProp(props, "cta", ar ? "افتح المحاكي" : "Open simulator"),
-        inputs: toolLaunchInputs(props.inputs),
+        inputs: toolSimulatorInputs(props.inputs),
       },
       children,
     };
@@ -1143,6 +1177,7 @@ function specHasInvestmentContext(spec: MizanJsonSpec): boolean {
     || Object.values(spec.elements).some((item) => (
       item.type === "IndicatorStrip"
       || (item.type === "SourceList" && item.props.sources.includes("investmentIndicators"))
+      || item.type === "ToolSimulator"
       || item.type === "ToolLaunch"
     ));
 }
@@ -1186,37 +1221,40 @@ function attachChildToGrid(elements: MizanJsonSpec["elements"], rootId: string, 
   }
 }
 
-export function ensureInvestmentToolLaunch(spec: MizanJsonSpec, prompt: string, lang: Lang): MizanJsonSpec {
-  if (!hasInvestmentScenarioRequest(prompt) || !specHasInvestmentContext(spec)) return spec;
+export function ensureInvestmentSimulator(spec: MizanJsonSpec, prompt: string, lang: Lang): MizanJsonSpec {
+  const wantsSimulator = hasInvestmentScenarioRequest(prompt) || hasInvestmentComparisonRequest(prompt);
+  if (!wantsSimulator || !specHasInvestmentContext(spec)) return spec;
 
-  const launch = investmentToolLaunch(lang, prompt);
-  const existingLaunch = Object.entries(spec.elements).find(([, item]) => item.type === "ToolLaunch");
+  const simulator = investmentToolSimulator(lang, prompt);
+  const existingSimulator = Object.entries(spec.elements).find(([, item]) => item.type === "ToolSimulator" || item.type === "ToolLaunch");
   const elements: MizanJsonSpec["elements"] = { ...spec.elements };
+  const forceCompareMode = hasInvestmentComparisonRequest(prompt);
 
-  if (existingLaunch) {
-    const [id, item] = existingLaunch;
-    if (item.type === "ToolLaunch") {
+  if (existingSimulator) {
+    const [id, item] = existingSimulator;
+    if (item.type === "ToolSimulator" || item.type === "ToolLaunch") {
       elements[id] = {
-        ...item,
+        type: "ToolSimulator",
         props: {
-          ...item.props,
-          title: launch.props.title,
-          description: launch.props.description,
-          cta: launch.props.cta,
+          title: simulator.props.title,
+          description: simulator.props.description,
+          tool: "simulate_egypt_investment",
+          mode: forceCompareMode ? "compare" : simulator.props.mode,
           inputs: {
             ...item.props.inputs,
-            ...launch.props.inputs,
+            ...simulator.props.inputs,
           },
         },
+        children: item.children,
       };
       attachChildToGrid(elements, spec.root, id);
     }
     return { ...spec, elements };
   }
 
-  const launchId = uniqueElementId(elements, "tool-launch");
-  elements[launchId] = launch;
-  attachChildToGrid(elements, spec.root, launchId);
+  const simulatorId = uniqueElementId(elements, "simulator");
+  elements[simulatorId] = simulator;
+  attachChildToGrid(elements, spec.root, simulatorId);
 
   return { ...spec, elements };
 }
@@ -1511,7 +1549,7 @@ function makeSourcesFallbackSpec(lang: Lang): MizanJsonSpec {
 
 function makeInvestmentFallbackSpec(lang: Lang, prompt = ""): MizanJsonSpec {
   const ar = lang === "ar";
-  const includeToolLaunch = hasInvestmentScenarioRequest(prompt);
+  const includeSimulator = hasInvestmentScenarioRequest(prompt) || hasInvestmentComparisonRequest(prompt);
   return {
     root: "root",
     elements: {
@@ -1530,8 +1568,8 @@ function makeInvestmentFallbackSpec(lang: Lang, prompt = ""): MizanJsonSpec {
       grid: {
         type: "MizanGrid",
         props: { columns: 3 },
-        children: includeToolLaunch
-          ? ["indicators", "launch", "read", "sources", "guardrail"]
+        children: includeSimulator
+          ? ["indicators", "simulator", "read", "sources", "guardrail"]
           : ["indicators", "read", "sources", "guardrail"],
       },
       indicators: {
@@ -1539,9 +1577,9 @@ function makeInvestmentFallbackSpec(lang: Lang, prompt = ""): MizanJsonSpec {
         props: {
           title: ar ? "مؤشرات السوق المتاحة" : "Available market indicators",
           description: ar
-            ? "عوائد ومعدلات وسعر صرف وتضخم من بيانات ميزان."
-            : "Returns, rates, exchange rate, and inflation from Mizan data.",
-          indicators: ["cbe_cd_rate", "egypt_tbill_rate", "inflation", "exchange_rate", "egx30_annual_return", "gold_annual_return"],
+            ? "معدلات وسعر صرف وتضخم من بيانات ميزان الموثقة."
+            : "Rates, exchange rate, and inflation from sourced Mizan data.",
+          indicators: ["cbe_cd_rate", "egypt_tbill_rate", "inflation", "exchange_rate"],
         },
       },
       read: {
@@ -1581,9 +1619,9 @@ function makeInvestmentFallbackSpec(lang: Lang, prompt = ""): MizanJsonSpec {
           sources: ["investmentIndicators"],
         },
       },
-      ...(includeToolLaunch
+      ...(includeSimulator
         ? {
-            launch: investmentToolLaunch(lang, prompt),
+            simulator: investmentToolSimulator(lang, prompt),
           }
         : {}),
       guardrail: {

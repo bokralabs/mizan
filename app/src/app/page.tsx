@@ -359,32 +359,333 @@ function indicatorLabel(key: InvestmentIndicatorKey, lang: Lang): string {
   return labels[key][lang];
 }
 
-function toolLaunchHref(props: Extract<MizanElement, { type: "ToolLaunch" }>["props"]): string {
-  const params = new URLSearchParams();
-  const { inputs } = props;
-  if (inputs.capitalEgp !== undefined) params.set("capitalEgp", String(inputs.capitalEgp));
-  if (inputs.horizonYears !== undefined) params.set("horizonYears", String(inputs.horizonYears));
-  if (inputs.strategy !== undefined) params.set("strategy", inputs.strategy);
-  if (inputs.inflationPct !== undefined) params.set("inflationPct", String(inputs.inflationPct));
-  if (inputs.egpDepreciationPct !== undefined) params.set("egpDepreciationPct", String(inputs.egpDepreciationPct));
-  params.set("focus", "output");
-  params.set("source", "mizan-chat");
-  return `${props.href}?${params.toString()}`;
+type SimulatorInputs = Extract<MizanElement, { type: "ToolSimulator" }>["props"]["inputs"];
+type SimulatorProps = Extract<MizanElement, { type: "ToolSimulator" }>["props"] | Extract<MizanElement, { type: "ToolLaunch" }>["props"];
+type SimulatorAssetKey = "tbills" | "cds" | "egx30" | "realEstate" | "gold";
+type SimulatorStrategy = NonNullable<SimulatorInputs["strategy"]>;
+
+const SIMULATOR_ASSETS: Array<{
+  key: SimulatorAssetKey;
+  indicator: InvestmentIndicatorKey;
+  fallbackReturn: number;
+  color: string;
+  label: Record<Lang, string>;
+}> = [
+  { key: "tbills", indicator: "egypt_tbill_rate", fallbackReturn: 25.7, color: "#3FC380", label: { en: "T-bills", ar: "أذون خزانة" } },
+  { key: "cds", indicator: "cbe_cd_rate", fallbackReturn: 16, color: "#6C8EEF", label: { en: "Bank CDs", ar: "شهادات بنكية" } },
+  { key: "egx30", indicator: "egx30_annual_return", fallbackReturn: 18.5, color: "#C9A84C", label: { en: "EGX30", ar: "EGX30" } },
+  { key: "realEstate", indicator: "egypt_real_estate_return", fallbackReturn: 15, color: "#2EC4B6", label: { en: "Real estate", ar: "عقار" } },
+  { key: "gold", indicator: "gold_annual_return", fallbackReturn: 20, color: "#F59E0B", label: { en: "Gold", ar: "ذهب" } },
+];
+
+const SIMULATOR_STRATEGIES: Record<SimulatorStrategy, {
+  label: Record<Lang, string>;
+  allocation: Record<SimulatorAssetKey, number>;
+}> = {
+  conservative: {
+    label: { en: "Conservative", ar: "محافظ" },
+    allocation: { tbills: 35, cds: 35, egx30: 5, realEstate: 15, gold: 10 },
+  },
+  balanced: {
+    label: { en: "Balanced", ar: "متوازن" },
+    allocation: { tbills: 20, cds: 20, egx30: 20, realEstate: 20, gold: 20 },
+  },
+  aggressive: {
+    label: { en: "Aggressive", ar: "هجومي" },
+    allocation: { tbills: 5, cds: 10, egx30: 40, realEstate: 25, gold: 20 },
+  },
+  fixedIncome: {
+    label: { en: "Fixed income", ar: "دخل ثابت" },
+    allocation: { tbills: 45, cds: 45, egx30: 0, realEstate: 0, gold: 10 },
+  },
+  egyptianGrowth: {
+    label: { en: "Egypt growth", ar: "نمو مصري" },
+    allocation: { tbills: 10, cds: 15, egx30: 40, realEstate: 25, gold: 10 },
+  },
+};
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
-function toolLaunchChips(props: Extract<MizanElement, { type: "ToolLaunch" }>["props"], lang: Lang): string[] {
-  const { inputs } = props;
-  const chips: string[] = [];
-  if (inputs.capitalEgp !== undefined) {
-    chips.push(fmtEGP(inputs.capitalEgp, { compact: true, decimals: 1 }));
-  }
-  if (inputs.horizonYears !== undefined) {
-    chips.push(lang === "ar" ? `${inputs.horizonYears} سنوات` : `${inputs.horizonYears} years`);
-  }
-  if (inputs.strategy !== undefined) {
-    chips.push(inputs.strategy.replace(/([a-z])([A-Z])/g, "$1 $2"));
-  }
-  return chips;
+function investmentIndicatorValue(
+  investmentDefaults: InvestmentDefaults | undefined,
+  key: InvestmentIndicatorKey,
+  fallback: number,
+): number {
+  const value = investmentDefaults?.[key]?.value;
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function investmentSource(investmentDefaults: InvestmentDefaults | undefined): StatSource | null {
+  const record = Object.values(investmentDefaults ?? {}).find((item) => item?.sourceUrl);
+  return record?.sourceUrl ? { sourceUrl: record.sourceUrl, sanadLevel: record.sanadLevel } : null;
+}
+
+function simulatorLinePath(values: number[], width: number, height: number): string {
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values, max);
+  const range = Math.max(max - min, max * 0.08, 1);
+  return values
+    .map((value, index) => {
+      const x = values.length === 1 ? 0 : (index / (values.length - 1)) * width;
+      const y = height - 8 - ((value - min) / range) * (height - 16);
+      return `${index === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+}
+
+function simulatorAreaPath(values: number[], width: number, height: number): string {
+  const line = simulatorLinePath(values, width, height);
+  return `${line} L${width},${height - 8} L0,${height - 8} Z`;
+}
+
+function comparisonStrategies(primary: SimulatorStrategy): SimulatorStrategy[] {
+  const candidates: SimulatorStrategy[] = primary === "fixedIncome"
+    ? ["fixedIncome", "balanced", "egyptianGrowth"]
+    : [primary, "fixedIncome", "balanced"];
+  return Array.from(new Set(candidates)).slice(0, 3);
+}
+
+function InvestmentSimulatorBlock({
+  props,
+  investmentDefaults,
+  lang,
+}: {
+  props: SimulatorProps;
+  investmentDefaults: InvestmentDefaults | undefined;
+  lang: Lang;
+}) {
+  const initialInputs = props.inputs;
+  const title = "href" in props
+    ? (lang === "ar" ? "محاكي الاستثمار" : "Investment simulator")
+    : props.title;
+  const description = "href" in props
+    ? (lang === "ar" ? "اضبط السيناريو داخل اللوحة وقارن العائد الاسمي والحقيقي." : "Adjust the scenario in this board and compare nominal and real outcomes.")
+    : props.description;
+  const mode = "mode" in props ? props.mode : "simulate";
+  const [capital, setCapital] = useState(initialInputs.capitalEgp ?? 100_000);
+  const [horizon, setHorizon] = useState(initialInputs.horizonYears ?? 5);
+  const [strategy, setStrategy] = useState<SimulatorStrategy>(initialInputs.strategy ?? "balanced");
+  const [inflation, setInflation] = useState(initialInputs.inflationPct ?? investmentIndicatorValue(investmentDefaults, "inflation", 12));
+  const [depreciation, setDepreciation] = useState(initialInputs.egpDepreciationPct ?? 7);
+
+  useEffect(() => {
+    setCapital(initialInputs.capitalEgp ?? 100_000);
+    setHorizon(initialInputs.horizonYears ?? 5);
+    setStrategy(initialInputs.strategy ?? "balanced");
+    setInflation(initialInputs.inflationPct ?? investmentIndicatorValue(investmentDefaults, "inflation", 12));
+    setDepreciation(initialInputs.egpDepreciationPct ?? 7);
+  }, [
+    initialInputs.capitalEgp,
+    initialInputs.egpDepreciationPct,
+    initialInputs.horizonYears,
+    initialInputs.inflationPct,
+    initialInputs.strategy,
+    investmentDefaults,
+  ]);
+
+  const projection = useMemo(() => {
+    const exchangeRate = investmentIndicatorValue(investmentDefaults, "exchange_rate", 50);
+    const returns = Object.fromEntries(SIMULATOR_ASSETS.map((asset) => [
+      asset.key,
+      investmentIndicatorValue(investmentDefaults, asset.indicator, asset.fallbackReturn),
+    ])) as Record<SimulatorAssetKey, number>;
+
+    function build(strategyKey: SimulatorStrategy) {
+      const allocation = SIMULATOR_STRATEGIES[strategyKey].allocation;
+      const rows = Array.from({ length: horizon + 1 }, (_, year) => {
+        const nominal = SIMULATOR_ASSETS.reduce((sum, asset) => {
+          const share = capital * ((allocation[asset.key] ?? 0) / 100);
+          return sum + share * Math.pow(1 + (returns[asset.key] ?? 0) / 100, year);
+        }, 0);
+        return {
+          year,
+          nominal,
+          real: nominal / Math.pow(1 + inflation / 100, year),
+          usd: nominal / (exchangeRate * Math.pow(1 + depreciation / 100, year)),
+        };
+      });
+      const final = rows.at(-1) ?? rows[0];
+      const weightedReturn = SIMULATOR_ASSETS.reduce((sum, asset) => sum + ((allocation[asset.key] ?? 0) / 100) * (returns[asset.key] ?? 0), 0);
+      return { strategy: strategyKey, allocation, final, rows, weightedReturn };
+    }
+
+    const current = build(strategy);
+    const comparison = comparisonStrategies(strategy).map((strategyKey) => build(strategyKey));
+    return { ...current, comparison, exchangeRate };
+  }, [capital, depreciation, horizon, inflation, investmentDefaults, strategy]);
+
+  const source = investmentSource(investmentDefaults);
+  const nominalPath = simulatorLinePath(projection.rows.map((row) => row.nominal), 280, 90);
+  const realPath = simulatorLinePath(projection.rows.map((row) => row.real), 280, 90);
+  const nominalArea = simulatorAreaPath(projection.rows.map((row) => row.nominal), 280, 90);
+  const maxComparisonValue = Math.max(...projection.comparison.map((item) => item.final.nominal), 1);
+
+  return (
+    <div className="workbench-tile min-w-0 rounded-[8px] border border-primary/55 bg-primary/10 p-4 animate-fade-up xl:col-span-12">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-primary">{title}</p>
+          <p className="mt-1 max-w-3xl text-xs leading-6 text-muted-foreground">{description}</p>
+        </div>
+        <EvidenceLinks source={source} appHref="/tools/invest" lang={lang} />
+      </div>
+
+      <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <div className="grid gap-3 rounded-[8px] border border-border/70 bg-background/70 p-3">
+          <label className="grid gap-2 text-xs font-semibold text-muted-foreground">
+            {lang === "ar" ? "رأس المال" : "Capital"}
+            <input
+              type="number"
+              min={10_000}
+              max={1_000_000_000}
+              step={10_000}
+              value={capital}
+              onChange={(event) => setCapital(clampNumber(Number(event.target.value) || 0, 10_000, 1_000_000_000))}
+              className="h-10 rounded-[6px] border border-border/70 bg-card px-3 font-mono text-sm text-foreground outline-none focus:border-primary"
+              dir="ltr"
+            />
+          </label>
+          <label className="grid gap-2 text-xs font-semibold text-muted-foreground">
+            {lang === "ar" ? `المدة: ${horizon} سنوات` : `Horizon: ${horizon} years`}
+            <input
+              type="range"
+              min={1}
+              max={30}
+              value={horizon}
+              onChange={(event) => setHorizon(Number(event.target.value))}
+              className="accent-primary"
+            />
+          </label>
+          <div className="grid gap-2">
+            <p className="text-xs font-semibold text-muted-foreground">{lang === "ar" ? "الاستراتيجية" : "Strategy"}</p>
+            <div className="flex flex-wrap gap-2">
+              {(Object.keys(SIMULATOR_STRATEGIES) as SimulatorStrategy[]).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setStrategy(key)}
+                  className={cn(
+                    "rounded-[6px] border px-2.5 py-1.5 text-[0.68rem] font-semibold transition-colors",
+                    strategy === key
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border/70 bg-card text-muted-foreground hover:border-primary hover:text-primary",
+                  )}
+                >
+                  {SIMULATOR_STRATEGIES[key].label[lang]}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-3">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-[8px] border border-border/70 bg-background/70 p-3">
+              <p className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">{lang === "ar" ? "القيمة الاسمية" : "Nominal"}</p>
+              <p className="mt-3 font-mono text-xl font-black text-primary" dir="ltr">{fmtEGP(projection.final.nominal, { compact: true, decimals: 1 })}</p>
+            </div>
+            <div className="rounded-[8px] border border-border/70 bg-background/70 p-3">
+              <p className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">{lang === "ar" ? "بقيمة اليوم" : "Real"}</p>
+              <p className="mt-3 font-mono text-xl font-black text-chart-3" dir="ltr">{fmtEGP(projection.final.real, { compact: true, decimals: 1 })}</p>
+            </div>
+            <div className="rounded-[8px] border border-border/70 bg-background/70 p-3">
+              <p className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">{lang === "ar" ? "بالدولار" : "USD view"}</p>
+              <p className="mt-3 font-mono text-xl font-black text-chart-2" dir="ltr">{fmtUSD(projection.final.usd, { compact: true, decimals: 1 })}</p>
+            </div>
+          </div>
+
+          <div className="rounded-[8px] border border-border/70 bg-background/70 p-3">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-bold">{lang === "ar" ? "مسار السيناريو" : "Scenario path"}</p>
+              <p className="font-mono text-[0.68rem] text-muted-foreground" dir="ltr">
+                {projection.weightedReturn.toFixed(1)}% / yr · {inflation.toFixed(1)}% inflation
+              </p>
+            </div>
+            <svg viewBox="0 0 280 90" role="img" aria-label={lang === "ar" ? "رسم مسار الاستثمار" : "Investment projection chart"} className="h-32 w-full overflow-visible" preserveAspectRatio="none">
+              {[18, 45, 72].map((y) => (
+                <line key={y} x1="0" x2="280" y1={y} y2={y} stroke="currentColor" strokeWidth="0.5" className="text-border" vectorEffect="non-scaling-stroke" />
+              ))}
+              <path d={nominalArea} fill="currentColor" className="text-primary/15" />
+              <path d={nominalPath} fill="none" stroke="currentColor" strokeWidth="3" className="text-primary" vectorEffect="non-scaling-stroke">
+                <title>{lang === "ar" ? "القيمة الاسمية" : "Nominal value"}</title>
+              </path>
+              <path d={realPath} fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="5 5" className="text-chart-3" vectorEffect="non-scaling-stroke">
+                <title>{lang === "ar" ? "القيمة الحقيقية" : "Inflation-adjusted value"}</title>
+              </path>
+              <circle cx="280" cy={nominalPath.split(" ").at(-1)?.split(",").at(1) ?? 8} r="3.5" fill="currentColor" className="text-primary" />
+              <circle cx="280" cy={realPath.split(" ").at(-1)?.split(",").at(1) ?? 8} r="3" fill="currentColor" className="text-chart-3" />
+            </svg>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {[
+                { label: lang === "ar" ? "اسمي" : "Nominal", value: projection.final.nominal, color: "bg-primary" },
+                { label: lang === "ar" ? "حقيقي" : "Real", value: projection.final.real, color: "bg-chart-3" },
+              ].map((row) => (
+                <div key={row.label} className="rounded-[6px] border border-border/60 bg-card/70 p-2">
+                  <div className="flex items-center justify-between gap-2 text-[0.65rem] font-semibold text-muted-foreground">
+                    <span>{row.label}</span>
+                    <span className="font-mono" dir="ltr">{fmtEGP(row.value, { compact: true, decimals: 1 })}</span>
+                  </div>
+                  <div className="mt-2 h-2 overflow-hidden rounded-[3px] bg-muted">
+                    <div className={cn("h-full rounded-[3px]", row.color)} style={{ width: `${Math.max(6, (row.value / Math.max(projection.final.nominal, 1)) * 100)}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 flex h-3 overflow-hidden rounded-[4px] bg-muted">
+              {SIMULATOR_ASSETS.map((asset) => {
+                const pct = projection.allocation[asset.key] ?? 0;
+                if (pct <= 0) return null;
+                return (
+                  <div key={asset.key} style={{ width: `${pct}%`, backgroundColor: asset.color }} title={`${asset.label[lang]}: ${pct}%`} />
+                );
+              })}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+              {SIMULATOR_ASSETS.map((asset) => {
+                const pct = projection.allocation[asset.key] ?? 0;
+                if (pct <= 0) return null;
+                return (
+                  <span key={asset.key} className="inline-flex items-center gap-1 text-[0.65rem] text-muted-foreground" title={`${asset.label[lang]}: ${pct}%`}>
+                    <span className="size-2 rounded-full" style={{ backgroundColor: asset.color }} />
+                    {asset.label[lang]} {pct}%
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+
+          {mode === "compare" && (
+            <div className="rounded-[8px] border border-border/70 bg-background/70 p-3">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-bold">{lang === "ar" ? "مقارنة جانبية" : "Side-by-side comparison"}</p>
+                <p className="text-[0.68rem] text-muted-foreground">{lang === "ar" ? "نهاية المدة" : "End of horizon"}</p>
+              </div>
+              <div className="grid gap-2 md:grid-cols-3">
+                {projection.comparison.map((item) => (
+                  <div key={item.strategy} className={cn(
+                    "rounded-[8px] border p-3",
+                    item.strategy === strategy ? "border-primary/60 bg-primary/10" : "border-border/60 bg-card/70",
+                  )}>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-xs font-bold">{SIMULATOR_STRATEGIES[item.strategy].label[lang]}</p>
+                      <span className="font-mono text-[0.65rem] text-muted-foreground" dir="ltr">{item.weightedReturn.toFixed(1)}%</span>
+                    </div>
+                    <p className="mt-3 font-mono text-lg font-black text-primary" dir="ltr">{fmtEGP(item.final.nominal, { compact: true, decimals: 1 })}</p>
+                    <p className="mt-1 font-mono text-sm font-bold text-chart-3" dir="ltr">{fmtEGP(item.final.real, { compact: true, decimals: 1 })} real</p>
+                    <div className="mt-3 h-2 overflow-hidden rounded-[3px] bg-muted">
+                      <div className="h-full rounded-[3px] bg-primary" style={{ width: `${Math.max(8, (item.final.nominal / maxComparisonValue) * 100)}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function MizanMotionTitle({ lang }: { lang: Lang }) {
@@ -698,12 +999,16 @@ function MizanRenderer({
         );
       },
       IndicatorStrip: ({ props }) => {
+        const isLoading = investmentDefaults === undefined;
+        const indicators = isLoading
+          ? props.indicators
+          : props.indicators.filter((key) => investmentDefaults[key] !== undefined);
         return (
           <div className="workbench-tile min-w-0 rounded-[8px] border border-border/70 bg-card/80 p-4 animate-fade-up xl:col-span-12">
             <p className="text-sm font-bold">{props.title}</p>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">{props.description}</p>
             <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {props.indicators.map((key, index) => {
+              {indicators.map((key, index) => {
                 const record = investmentDefaults?.[key];
                 const badgeSource = record?.sourceUrl
                   ? { sourceUrl: record.sourceUrl, sanadLevel: record.sanadLevel }
@@ -723,6 +1028,11 @@ function MizanRenderer({
                   </div>
                 );
               })}
+              {!isLoading && indicators.length === 0 && (
+                <div className="rounded-[6px] border border-border/60 bg-background/70 p-3 text-xs leading-5 text-muted-foreground sm:col-span-2 xl:col-span-4">
+                  {lang === "ar" ? "لا توجد مؤشرات موثقة متاحة لهذا العرض حاليا." : "No sourced indicators are available for this view yet."}
+                </div>
+              )}
             </div>
           </div>
         );
@@ -779,33 +1089,12 @@ function MizanRenderer({
           ))}
         </div>
       ),
-      ToolLaunch: ({ props }) => {
-        const chips = toolLaunchChips(props, lang);
-        return (
-          <div className="workbench-tile min-w-0 rounded-[8px] border border-primary/55 bg-primary/10 p-4 animate-fade-up xl:col-span-4">
-            <p className="text-sm font-bold text-primary">{props.title}</p>
-            <p className="mt-2 text-xs leading-6 text-muted-foreground">{props.description}</p>
-            {chips.length > 0 && (
-              <div className="mt-4 flex flex-wrap gap-2">
-                {chips.map((chip) => (
-                  <span key={chip} className="rounded-[6px] border border-primary/30 bg-background/70 px-2 py-1 text-[0.65rem] font-semibold text-primary">
-                    {chip}
-                  </span>
-                ))}
-              </div>
-            )}
-            <Link
-              href={toolLaunchHref(props)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-4 inline-flex items-center gap-2 rounded-[6px] border border-primary bg-primary px-3 py-2 text-xs font-bold text-primary-foreground no-underline transition-opacity hover:opacity-90"
-            >
-              {props.cta}
-              <ArrowUpRight size={13} />
-            </Link>
-          </div>
-        );
-      },
+      ToolSimulator: ({ props }) => (
+        <InvestmentSimulatorBlock props={props} investmentDefaults={investmentDefaults} lang={lang} />
+      ),
+      ToolLaunch: ({ props }) => (
+        <InvestmentSimulatorBlock props={props} investmentDefaults={investmentDefaults} lang={lang} />
+      ),
       Suggestions: ({ props }) => (
         <div className="mt-5 flex flex-wrap gap-2 border-t border-border/60 pt-4">
           {props.prompts.map((suggestion) => (
@@ -951,27 +1240,30 @@ function ChatRail({
 
 function PlanningCanvas({ prompt, lang }: { prompt: string; lang: Lang }) {
   const steps = lang === "ar"
-    ? ["قراءة السؤال", "توليد مواصفة json-render", "مطابقة المكونات", "عرض اللوحة"]
-    : ["Reading prompt", "Generating json-render spec", "Matching components", "Rendering board"];
+    ? ["قراءة السؤال", "فحص بيانات ميزان", "تجهيز العرض", "مراجعة المصادر"]
+    : ["Reading the question", "Checking Mizan data", "Preparing the view", "Reviewing sources"];
 
   return (
     <section className="workbench-panel rounded-[8px] bg-card/90 p-5 animate-fade-up">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border/80 pb-5">
         <div>
-          <p className="workbench-label text-primary">{lang === "ar" ? "مسار الواجهة" : "UI harness"}</p>
+          <p className="workbench-label text-primary">{lang === "ar" ? "يبني العرض" : "Building view"}</p>
           <h2 className="mt-2 text-2xl font-black md:text-4xl">{prompt}</h2>
         </div>
-        <div className="rounded-[6px] border border-primary bg-primary/15 px-3 py-1.5 text-xs font-semibold text-primary">
-          AI SDK / json-render
+        <div className="inline-flex items-center gap-2 rounded-[6px] border border-primary/50 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary">
+          <span className="size-2 rounded-full bg-primary animate-pulse" />
+          {lang === "ar" ? "جار التحضير" : "Preparing"}
         </div>
       </div>
       <div className="grid gap-3 py-5 md:grid-cols-4">
         {steps.map((step, index) => (
           <div key={step} className="workbench-tile rounded-[8px] border border-border/70 bg-background/70 p-4 animate-fade-up" style={{ animationDelay: `${index * 90}ms` }}>
-            <div className="mb-4 h-1.5 overflow-hidden rounded-[3px] bg-muted">
-              <div className="mizan-progress-bar h-full w-full rounded-[3px] bg-primary animate-pulse" style={{ transform: `scaleX(${(35 + index * 15) / 100})` }} />
+            <div className="flex items-center gap-3">
+              <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-primary/45 bg-primary/10 text-[0.65rem] font-bold text-primary">
+                {index + 1}
+              </span>
+              <p className="text-sm font-semibold">{step}</p>
             </div>
-            <p className="text-sm font-semibold">{step}</p>
           </div>
         ))}
       </div>
