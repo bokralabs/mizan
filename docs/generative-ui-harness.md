@@ -1,88 +1,63 @@
-# Mizan Harness + json-render Generative UI
+# Mizan Custom Harness + json-render
 
-This documents the Mizan generative UI migration toward AI SDK HarnessAgent
-plus json-render.
+Mizan's generative home chat uses a project-owned harness boundary built from
+the `ai` npm package and `@json-render/*`. It does not use Vercel-hosted
+services, Vercel Sandbox, or AI SDK `HarnessAgent` in the product path.
 
-Current implementation:
-
-- The homepage render boundary uses `@json-render/react`: generated board state is converted into a flat json-render spec and rendered through the Mizan registry.
-- LLM calls use Vercel AI SDK directly. Convex remains the data authority and no longer hosts an external agent component.
-- `/api/generative-ui/harness` is an opt-in HarnessAgent route. It is disabled unless `MIZAN_HARNESS_ENABLED=1` is set because it creates a Vercel Sandbox session.
-
-Remaining migration:
-
-- Change the homepage planner schema from `mzn-grid-v1` to direct json-render spec output.
-- Stream json-render patches through AI SDK UI messages for progressive rendering.
-
-## Target Flow
+## Current Flow
 
 ```mermaid
 flowchart TD
-  U[User prompt] --> C[Homepage chat client]
-  C --> M[AI SDK message stream]
-  M --> R[Next.js API route: /api/generative-ui/harness]
+  U[User prompt] --> C[Homepage chat]
+  C --> R[Next route: /api/generative-ui/harness]
+  C --> S[Current json-render spec]
+  C --> D[Convex data context]
 
-  subgraph HarnessRuntime[AI SDK HarnessAgent runtime]
-    R --> HA[HarnessAgent]
-    HA --> S[Sandbox session]
-    HA --> H[Codex or Claude Code harness adapter]
-    HA --> T[Mizan tools]
+  subgraph MizanHarness[Mizan-owned harness]
+    R --> SDK[Vercel AI SDK package: generateObject]
+    SDK --> LLM[DeepSeek or OpenAI provider]
+    LLM --> SPEC[Strict json-render spec]
   end
 
-  subgraph MizanTools[Mizan data/tool boundary]
-    T --> DC[getDataContext]
-    T --> DS[getSourceEvidence]
-    T --> PV[getCurrentPageView]
-    DC --> CV[Convex data pack]
-    DS --> EV[Sanad + source URLs]
-    PV --> UIState[Current json-render tree]
-  end
-
-  subgraph JsonRender[json-render generation]
-    HA --> JP[catalog.prompt inline mode]
-    CV --> JP
-    EV --> JP
-    UIState --> JP
-    JP --> JSONL[Text + JSONL patches]
-    JSONL --> Pipe[pipeJsonRender]
-  end
-
-  Pipe --> Parts[AI SDK UIMessage parts]
-  Parts --> Chat[useChat]
-  Chat --> Extract[useJsonRenderMessage]
-  Extract --> Spec[json-render spec]
-  Spec --> Renderer[Renderer + Mizan registry]
-  Renderer --> UI[Generated charts, cards, forms, source panels]
+  SPEC --> V[Zod validation + normalization]
+  V --> JR[@json-render/react Renderer]
+  JR --> UI[Deterministic Mizan React components]
+  UI --> Sources[Sanad badges + source links]
 ```
+
+## Runtime Rules
+
+- The endpoint name says `harness`, but it is Mizan's own harness, not
+  `@ai-sdk/harness`.
+- The only AI runtime dependency is the `ai` package plus provider adapters such
+  as `@ai-sdk/openai`.
+- The UI contract is a flat json-render spec validated by
+  `mizanJsonSpecSchema`.
+- The model chooses catalog components and copy. React owns values, source
+  badges, chart rendering, links, styling, and interactions.
+- Follow-up turns send the current spec and recent chat to preserve context.
+- The route prefers `DEEPSEEK_API_KEY`; it falls back to `OPENAI_API_KEY`.
 
 ## Component Boundary
 
 ```mermaid
 flowchart LR
-  Catalog[Mizan json-render catalog] --> Registry[Mizan React registry]
-  Registry --> Cards[MetricCard]
-  Registry --> Charts[BarChart / SplitBar / TrendChart]
-  Registry --> Sources[SourcePanel + SanadBadge]
-  Registry --> Forms[Assumption controls]
-  Registry --> Layout[Stack / Grid / Section]
-
-  Catalog --> Prompt[catalog.prompt]
-  Prompt --> Harness[HarnessAgent]
-  Harness --> JsonPatches[JSONL patches]
-  JsonPatches --> Renderer[json-render Renderer]
+  Schema[mizanJsonSpecSchema] --> Catalog[mizanJsonCatalog]
+  Catalog --> Prompt[Catalog prompt]
+  Prompt --> LLM[generateObject]
+  LLM --> Spec[json-render spec]
+  Spec --> Registry[React registry]
+  Registry --> Metrics[MetricCard]
+  Registry --> Charts[BudgetBars / DebtSplit]
+  Registry --> Sources[SourceList + SanadBadge]
+  Registry --> Actions[Suggestions / ActionLinks]
 ```
 
-## Migration Rules
+## Migration Notes
 
-- Remove the LLM-specific `mzn-grid-v1` plan as the public UI contract.
-- Keep Convex as the data authority. Harness tools receive bounded data packs, not raw table access.
-- Let json-render own the UI tree shape through a catalog and registry.
-- Keep Sanad/source links as first-class registry components.
-- Keep follow-up continuity by passing the current json-render spec/tree into the harness route.
-- Keep the public route deterministic at the component boundary: the harness can choose catalog components, but cannot emit arbitrary JSX/CSS.
-
-## Package Notes
-
-- `HarnessAgent` is in AI SDK 7 canary/beta harness packages.
-- json-render `0.19.x` uses `@json-render/core` and `@json-render/react`.
-- The app is on AI SDK 7 canary at the top level. Guide chat and the LLM data pipeline use Vercel AI SDK directly; Convex stores messages and data in first-party tables.
+- `mzn-grid-v1` is no longer the home chat contract.
+- `app/convex/uiAgent.ts` has been removed from the product chat path.
+- No arbitrary JSX, CSS, SQL, external URLs, or sandboxed code execution should
+  be accepted from the model.
+- Data-backed values must come from Convex-derived context or first-party
+  renderer lookups, not model-invented numbers.

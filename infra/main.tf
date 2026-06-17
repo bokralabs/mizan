@@ -26,5 +26,5 @@ provider "digitalocean" {
 
 provider "github" {
   token = var.github_token
-  owner = "Ba3lisa"
+  owner = "bokralabs"
 }

@@ -5,8 +5,6 @@ import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useLanguage } from "@/components/providers";
 import type { Translations } from "@/lib/translations";
-// Card/CardContent available if needed for layout changes
-import { Skeleton } from "@/components/skeleton";
 import {
   Loader2,
   Check,
@@ -236,13 +234,13 @@ export function AiPipelineStatus() {
   // Loading state
   if (progress === undefined) {
     return (
-      <section className="container-page py-4">
-        <div className="border border-border/60 rounded-xl bg-card/40 p-5">
-          <div className="flex items-center gap-2 mb-3">
-            <Skeleton className="w-4 h-4 rounded-full" />
-            <Skeleton className="w-48 h-4 rounded" />
+      <section className="container-page py-4" dir={dir}>
+        <div className="rounded-xl border border-border/60 bg-card/40 px-5 py-3">
+          <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
+            <Loader2 size={14} className="animate-spin text-primary" />
+            <span className="font-semibold text-foreground">{t.pipeline_title}</span>
+            <span className="text-xs">{isAr ? "جار تحميل الحالة" : "Loading status"}</span>
           </div>
-          <Skeleton className="w-full h-24 rounded-lg" />
         </div>
       </section>
     );

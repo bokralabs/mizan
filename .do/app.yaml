@@ -19,6 +19,10 @@ services:
       - key: NODE_ENV
         value: production
         scope: RUN_AND_BUILD_TIME
+      - key: DEEPSEEK_API_KEY
+        value: ${DEEPSEEK_API_KEY}
+        type: SECRET
+        scope: RUN_TIME
     routes:
       - path: /
     health_check:

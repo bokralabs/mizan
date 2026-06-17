@@ -57,11 +57,11 @@ function OfficialCard({ official, size = "md" }: { official: Official; size?: "l
   const isAr = lang === "ar";
   const isLg = size === "lg";
   const slug = official.nameEn.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const profileHref = slug ? `/government/official/${slug}` : "#";
 
   return (
-    <Link href={slug ? `/government/official/${slug}` : "#"} className="no-underline block">
     <Card className={cn(
-      "border-border/80 transition-all hover:border-primary/40 cursor-pointer",
+      "border-border/80 transition-all hover:border-primary/40",
       isLg ? "bg-card" : "bg-card/80"
     )}>
       <CardContent className={cn("flex items-center gap-4", isLg ? "p-5" : "p-4")}>
@@ -72,11 +72,16 @@ function OfficialCard({ official, size = "md" }: { official: Official; size?: "l
         )}>
           {(isAr ? official.nameAr : official.nameEn).charAt(0)}
         </div>
-        <div className="min-w-0">
-          <p className={cn("font-bold text-foreground truncate flex items-center gap-1", isLg ? "text-base" : "text-sm")}>
-            {isAr ? official.nameAr : official.nameEn}
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-1">
+            <Link
+              href={profileHref}
+              className={cn("truncate font-bold text-foreground no-underline hover:text-primary", isLg ? "text-base" : "text-sm")}
+            >
+              {isAr ? official.nameAr : official.nameEn}
+            </Link>
             {official.sanadLevel && <SanadBadge sanadLevel={official.sanadLevel} sourceUrl={official.sourceUrl} />}
-          </p>
+          </div>
           <p className="text-xs text-muted-foreground truncate">
             {isAr ? official.titleAr : official.titleEn}
           </p>
@@ -88,7 +93,6 @@ function OfficialCard({ official, size = "md" }: { official: Official; size?: "l
         </div>
       </CardContent>
     </Card>
-    </Link>
   );
 }
 

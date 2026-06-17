@@ -481,7 +481,7 @@ function LiveWorkbenchPreview() {
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
               <span className="workbench-label rounded-[6px] border border-primary bg-primary/15 px-2.5 py-1 text-primary">
-                mzn-grid-v1
+                json-render
               </span>
               <span className="rounded-[6px] border border-primary bg-primary/15 px-2.5 py-1 text-xs font-semibold">
                 Adding to the page

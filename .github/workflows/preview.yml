@@ -33,13 +33,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - name: Prepare PR preview app spec
+        env:
+          PREVIEW_BRANCH: ${{ github.head_ref }}
+        run: |
+          cp .do/app.yaml .do/preview-app.yaml
+          perl -0pi -e 's/branch: main/branch: $ENV{PREVIEW_BRANCH}/' .do/preview-app.yaml
       - name: Deploy PR Preview to DigitalOcean
         id: deploy
         uses: digitalocean/app_action/deploy@v2
+        env:
+          NEXT_PUBLIC_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         with:
           deploy_pr_preview: "true"
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-          app_name: mizan
+          app_spec_location: .do/preview-app.yaml
       - name: Comment preview URL on PR
         if: steps.deploy.outputs.url
         uses: actions/github-script@v7

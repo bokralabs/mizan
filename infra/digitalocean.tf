@@ -9,15 +9,14 @@ resource "digitalocean_app" "mizan" {
       instance_count     = 1
       http_port          = 3000
 
-      github {
-        repo           = "Ba3lisa/mizan"
+      git {
+        repo_clone_url = "https://github.com/bokralabs/mizan.git"
         branch         = "main"
-        deploy_on_push = false  # Deploys only via release workflow (gh release create)
       }
 
-      source_dir    = "app"
-      build_command  = "npm ci --legacy-peer-deps && npm run build"
-      run_command    = "npm start"
+      source_dir       = "app"
+      build_command    = "npm ci --legacy-peer-deps && npm run build"
+      run_command      = "npm start"
       environment_slug = "node-js"
 
       env {

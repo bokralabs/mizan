@@ -1,174 +1,165 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ExternalLink, Newspaper } from "lucide-react";
 import { useLanguage } from "@/components/providers";
-import { Newspaper, ExternalLink } from "lucide-react";
 
-interface Headline {
+type Headline = {
   title: string;
   url: string;
   sourceDomain: string;
   language: string;
   publishedAt: number;
-}
+};
 
-function relativeTime(epochMs: number): string {
-  const diff = Date.now() - epochMs;
+const COPY = {
+  en: {
+    channel: "News channel",
+    stories: "stories",
+    loading: "Loading headlines",
+    empty: "No news available",
+    open: "Open",
+  },
+  ar: {
+    channel: "قناة الأخبار",
+    stories: "خبر",
+    loading: "تحميل الأخبار",
+    empty: "لا توجد أخبار حالياً",
+    open: "فتح",
+  },
+} as const;
+
+function relativeTime(epochMs: number, lang: "ar" | "en"): string {
+  const diff = Math.max(0, Date.now() - epochMs);
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "now";
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1) return lang === "ar" ? "الآن" : "now";
+  if (mins < 60) return lang === "ar" ? `منذ ${mins}د` : `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
+  if (hrs < 24) return lang === "ar" ? `منذ ${hrs}س` : `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
+  return lang === "ar" ? `منذ ${days}ي` : `${days}d ago`;
 }
 
-const SCROLL_SPEED = 0.5; // pixels per frame
+function headlineLanguageScore(headline: Headline, lang: "ar" | "en"): number {
+  if (lang === "ar") return headline.language === "Arabic" ? 0 : 1;
+  return headline.language === "English" ? 0 : 1;
+}
 
 export function NewsTicker() {
-  const { t } = useLanguage();
+  const { lang, t } = useLanguage();
+  const copy = COPY[lang];
   const [headlines, setHeadlines] = useState<Headline[]>([]);
   const [loading, setLoading] = useState(true);
-  const [hovered, setHovered] = useState(false);
   const fetchedRef = useRef(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const rafRef = useRef<number>(0);
 
   useEffect(() => {
     if (fetchedRef.current) return;
     fetchedRef.current = true;
+
     fetch("/api/news")
       .then((res) => res.json())
       .then((data: { articles?: Headline[] }) => {
         setHeadlines(data.articles ?? []);
       })
-      .catch(() => {})
+      .catch(() => setHeadlines([]))
       .finally(() => setLoading(false));
   }, []);
 
-  // JS-based auto-scroll via scrollTop for seamless loop + native scroll on hover
-  const tick = useCallback(() => {
-    const el = scrollRef.current;
-    if (el) {
-      el.scrollTop += SCROLL_SPEED;
-      const half = el.scrollHeight / 2;
-      if (el.scrollTop >= half) {
-        el.scrollTop -= half;
-      }
-    }
-    // eslint-disable-next-line react-hooks/immutability
-    rafRef.current = requestAnimationFrame(tick);
-  }, []);
+  const visibleHeadlines = useMemo(() => (
+    [...headlines]
+      .sort((a, b) => {
+        const langDelta = headlineLanguageScore(a, lang) - headlineLanguageScore(b, lang);
+        return langDelta !== 0 ? langDelta : b.publishedAt - a.publishedAt;
+      })
+      .slice(0, 18)
+  ), [headlines, lang]);
+  const marqueeHeadlines = visibleHeadlines.length > 0 ? visibleHeadlines : [];
 
-  useEffect(() => {
-    if (hovered || headlines.length === 0) return;
-    rafRef.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [hovered, headlines.length, tick]);
+  function renderTickerItem(headline: Headline, index: number, interactive: boolean) {
+    const meta = `${headline.sourceDomain} · ${relativeTime(headline.publishedAt, lang)}`;
+    const content = (
+      <>
+        <span className="mx-3 size-1.5 shrink-0 rounded-full bg-primary/70" />
+        <span className="max-w-28 shrink-0 truncate font-mono text-[0.62rem] uppercase text-primary/75">
+          {meta}
+        </span>
+        <span className="mx-2 text-muted-foreground/45">/</span>
+        <span className="max-w-[30rem] truncate text-xs font-semibold text-foreground">
+          {headline.title}
+        </span>
+      </>
+    );
+
+    if (!interactive) {
+      return (
+        <span key={`dup-${headline.url}-${index}`} className="inline-flex h-9 items-center whitespace-nowrap">
+          {content}
+          <span className="ms-1 inline-flex size-6 shrink-0" />
+        </span>
+      );
+    }
+
+    return (
+      <span key={`${headline.url}-${index}`} className="group/news-item inline-flex h-9 items-center whitespace-nowrap">
+        <a
+          href={headline.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex min-w-0 items-center text-start text-foreground no-underline outline-none transition-colors hover:text-primary focus-visible:text-primary"
+        >
+          {content}
+        </a>
+        <a
+          href={headline.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={`${copy.open}: ${headline.title}`}
+          className="ms-1 inline-flex size-6 shrink-0 items-center justify-center rounded-[5px] text-muted-foreground opacity-60 no-underline transition-colors hover:bg-primary/10 hover:text-primary hover:opacity-100 focus-visible:bg-primary/10 focus-visible:text-primary focus-visible:opacity-100"
+        >
+          <ExternalLink size={12} />
+        </a>
+      </span>
+    );
+  }
+
+  if (!loading && visibleHeadlines.length === 0) {
+    return (
+      <section className="rounded-[8px] border border-border/70 bg-card/75 px-3 py-2">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Newspaper size={14} className="text-primary" />
+          <span>{t.newsTicker_noNews ?? copy.empty}</span>
+        </div>
+      </section>
+    );
+  }
 
   return (
-    <div className="relative group/ticker h-full">
-      <div className="absolute -inset-0.5 bg-gradient-to-r from-primary/20 via-primary/5 to-primary/20 rounded-2xl blur-sm opacity-0 group-hover/ticker:opacity-100 transition-opacity duration-500" />
-
-      <div className="relative border border-border/60 rounded-2xl bg-card/80 backdrop-blur-sm overflow-hidden h-full flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-2.5 bg-gradient-to-r from-primary/10 via-transparent to-primary/5 border-b border-border/40 shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <Newspaper size={14} className="text-primary" />
-              <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
+    <section className="rounded-[8px] border border-border/70 bg-card/75">
+      <div className="flex h-11 items-center gap-3 overflow-hidden px-3">
+        <div className="inline-flex shrink-0 items-center gap-2 text-primary">
+          <Newspaper size={14} />
+          <span className="workbench-label">{t.newsTicker_title ?? copy.channel}</span>
+        </div>
+        <div className="h-5 w-px shrink-0 bg-border/80" />
+        <div className="news-marquee min-w-0 flex-1 overflow-hidden">
+          {loading ? (
+            <div className="h-3 w-full animate-pulse rounded-full bg-muted" />
+          ) : (
+            <div className={lang === "ar" ? "news-marquee-track news-marquee-track-rtl" : "news-marquee-track"}>
+              <div className="inline-flex min-w-max items-center">
+                {marqueeHeadlines.map((headline, index) => renderTickerItem(headline, index, true))}
+              </div>
+              <div className="inline-flex min-w-max items-center" aria-hidden="true">
+                {marqueeHeadlines.map((headline, index) => renderTickerItem(headline, index, false))}
+              </div>
             </div>
-            <span className="text-xs font-bold text-primary tracking-wide uppercase">
-              {t.newsTicker_title}
-            </span>
-          </div>
-          {headlines.length > 0 && (
-            <span className="text-[0.6rem] text-muted-foreground/50 font-mono">
-              {headlines.length} {t.newsTicker_stories}
-            </span>
           )}
         </div>
-
-        {/* Ticker body */}
-        {loading ? (
-          <TickerSkeleton />
-        ) : headlines.length === 0 ? (
-          <div className="flex items-center justify-center flex-1 text-xs text-muted-foreground/40">
-            {t.newsTicker_noNews}
-          </div>
-        ) : (
-          <div className="relative flex-1 overflow-hidden">
-            <div className="absolute top-0 left-0 right-0 h-6 z-10 pointer-events-none bg-gradient-to-b from-card/90 to-transparent" />
-            <div
-              ref={scrollRef}
-              className="h-full overflow-y-auto scrollbar-thin"
-              onMouseEnter={() => setHovered(true)}
-              onMouseLeave={() => setHovered(false)}
-            >
-              {headlines.map((h, i) => (
-                <HeadlineCard key={i} headline={h} />
-              ))}
-              {/* Duplicate for seamless infinite loop */}
-              {headlines.map((h, i) => (
-                <HeadlineCard key={`dup-${i}`} headline={h} />
-              ))}
-            </div>
-            <div className="absolute bottom-0 left-0 right-0 h-6 z-10 pointer-events-none bg-gradient-to-t from-card/90 to-transparent" />
-          </div>
-        )}
-
-        {/* Footer */}
-        <div className="flex items-center justify-between px-4 py-1.5 border-t border-border/30 bg-muted/5 shrink-0">
-          <span className="text-[0.5rem] text-muted-foreground/30 font-mono uppercase tracking-wider">
-            RSS + AI
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function HeadlineCard({ headline }: { headline: Headline }) {
-  return (
-    <a
-      href={headline.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="block px-4 py-2.5 border-b border-border/15 hover:bg-primary/5 transition-colors no-underline group/card"
-    >
-      <div className="flex items-center gap-1.5 mb-0.5">
-        <span className="text-[0.55rem] font-mono text-primary/50 uppercase tracking-wide truncate max-w-[120px]">
-          {headline.sourceDomain}
+        <span className="shrink-0 font-mono text-[0.65rem] text-muted-foreground">
+          {loading ? copy.loading : `${visibleHeadlines.length} ${t.newsTicker_stories ?? copy.stories}`}
         </span>
-        <span className="text-[0.5rem] text-muted-foreground/25">·</span>
-        <span className="text-[0.5rem] text-muted-foreground/35 font-mono shrink-0">
-          {relativeTime(headline.publishedAt)}
-        </span>
-        <ExternalLink
-          size={8}
-          className="ml-auto shrink-0 text-muted-foreground/20 group-hover/card:text-primary/50 transition-colors"
-        />
       </div>
-      <p className="text-[0.7rem] leading-snug text-foreground/80 line-clamp-2 group-hover/card:text-foreground transition-colors">
-        {headline.title}
-      </p>
-    </a>
-  );
-}
 
-function TickerSkeleton() {
-  return (
-    <div className="flex-1 px-4 py-3 space-y-3">
-      {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="space-y-1.5 animate-pulse" style={{ animationDelay: `${i * 100}ms` }}>
-          <div className="flex items-center gap-2">
-            <div className="h-2.5 w-16 bg-muted/30 rounded" />
-            <div className="h-2 w-8 bg-muted/20 rounded" />
-          </div>
-          <div className="h-3 w-full bg-muted/20 rounded" />
-          <div className="h-3 w-3/4 bg-muted/15 rounded" />
-        </div>
-      ))}
-    </div>
+    </section>
   );
 }

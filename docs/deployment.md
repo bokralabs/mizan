@@ -150,5 +150,6 @@ Set these in bokralabs/mizan -> Settings -> Secrets:
 | `NEXT_PUBLIC_CONVEX_URL` | Production Convex URL from Convex dashboard |
 | `CONVEX_DEPLOY_KEY` | Convex dashboard -> Settings -> Deploy key |
 | `DIGITALOCEAN_ACCESS_TOKEN` | DigitalOcean -> API -> Personal access tokens |
+| `DEEPSEEK_API_KEY` | DeepSeek API key for the Mizan generative UI chat |
 
 Note: `NEXT_PUBLIC_APP_VERSION` is set automatically by the deploy workflow from the release tag (or commit SHA as fallback). It does not need to be configured as a secret.
