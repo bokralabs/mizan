@@ -295,6 +295,27 @@ html[dir="ltr"] { font-family: var(--font-body); line-height: 1.65; }
   text-transform: uppercase;
 }
 
+.mizan-workbench .news-marquee {
+  mask-image: linear-gradient(90deg, transparent, black 6%, black 94%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, black 6%, black 94%, transparent);
+}
+
+.mizan-workbench .news-marquee-track {
+  display: flex;
+  width: max-content;
+  animation: news-marquee 92s linear infinite;
+  will-change: transform;
+}
+
+.mizan-workbench .news-marquee-track-rtl {
+  animation-name: news-marquee-rtl;
+}
+
+.mizan-workbench .news-marquee:hover .news-marquee-track,
+.mizan-workbench .news-marquee:focus-within .news-marquee-track {
+  animation-play-state: paused;
+}
+
 .mizan-workbench .metric-strip-shell {
   container-type: inline-size;
 }
@@ -358,6 +379,14 @@ html[dir="ltr"] { font-family: var(--font-body); line-height: 1.65; }
 @keyframes hero-breathe {
   0%, 100% { opacity: 0.06; transform: scale(1); }
   50% { opacity: 0.10; transform: scale(1.05); }
+}
+@keyframes news-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@keyframes news-marquee-rtl {
+  from { transform: translateX(-50%); }
+  to { transform: translateX(0); }
 }
 .animate-hero-breathe {
   animation: hero-breathe 8s ease-in-out infinite;
@@ -426,19 +455,13 @@ html[dir="ltr"] { font-family: var(--font-body); line-height: 1.65; }
   background: #2EC4B6; animation: pulse-glow 2s ease-in-out infinite;
 }
 
-/* ── News ticker (scroll-based, pauses on hover) ── */
-.scrollbar-thin {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(var(--primary-rgb, 128 128 128) / 0.2) transparent;
-}
-.scrollbar-thin::-webkit-scrollbar { width: 4px; }
-.scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
-.scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(var(--primary-rgb, 128 128 128) / 0.2); border-radius: 2px; }
-
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+  .news-marquee-track {
+    animation: none !important;
   }
   .mizan-slot-text > span {
     animation: none !important;
