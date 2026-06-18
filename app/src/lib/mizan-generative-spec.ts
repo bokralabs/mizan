@@ -140,9 +140,77 @@ const toolInputsSchema = z.object({
   capitalEgp: z.number().positive().max(1_000_000_000).optional(),
   horizonYears: z.number().int().min(1).max(30).optional(),
   strategy: investmentStrategySchema.optional(),
+  compareStrategies: z.array(investmentStrategySchema).min(2).max(5).optional(),
   inflationPct: z.number().min(0).max(100).optional(),
   egpDepreciationPct: z.number().min(0).max(100).optional(),
 }).default({});
+
+const blockSourceSchema = z.object({
+  id: z.string().min(1).max(48),
+  label: z.string().min(2).max(96),
+  url: z.string().url().max(500),
+  publisher: z.string().min(2).max(96).optional(),
+  lastUpdated: z.string().min(4).max(32).optional(),
+  confidence: z.enum(["official", "secondary", "estimated", "unverified"]),
+});
+
+const metricDeltaSchema = z.object({
+  direction: z.enum(["up", "down", "flat"]),
+  label: z.string().min(1).max(36),
+  context: z.string().min(2).max(80),
+});
+
+const metricStripBlockPropsSchema = z.object({
+  eyebrow: z.string().min(2).max(36).optional(),
+  heading: z.string().min(2).max(96),
+  summary: z.string().min(2).max(320),
+  metrics: z.array(z.object({
+    id: z.string().min(1).max(48),
+    label: z.string().min(2).max(72),
+    value: z.string().min(1).max(48),
+    detail: z.string().min(2).max(220).optional(),
+    sourceId: z.string().min(1).max(48),
+    delta: metricDeltaSchema.optional(),
+    emphasis: z.enum(["primary", "default"]).optional(),
+  })).min(1).max(6),
+  sources: z.array(blockSourceSchema).min(1).max(8),
+  footerNote: z.string().min(2).max(260).optional(),
+});
+
+const rankingTableBlockPropsSchema = z.object({
+  eyebrow: z.string().min(2).max(36).optional(),
+  heading: z.string().min(2).max(96),
+  summary: z.string().min(2).max(320),
+  metricLabel: z.string().min(2).max(64),
+  rows: z.array(z.object({
+    id: z.string().min(1).max(48),
+    label: z.string().min(2).max(96),
+    value: z.string().min(1).max(48),
+    score: z.number().min(0).max(100),
+    sourceId: z.string().min(1).max(48),
+    context: z.string().min(2).max(240).optional(),
+    trend: metricDeltaSchema.optional(),
+  })).min(2).max(8),
+  sources: z.array(blockSourceSchema).min(1).max(8),
+  footerNote: z.string().min(2).max(260).optional(),
+});
+
+const timelineFeedBlockPropsSchema = z.object({
+  eyebrow: z.string().min(2).max(36).optional(),
+  heading: z.string().min(2).max(96),
+  summary: z.string().min(2).max(320),
+  signals: z.array(z.object({
+    id: z.string().min(1).max(48),
+    label: z.string().min(2).max(96),
+    eventDate: z.string().min(4).max(32),
+    summary: z.string().min(2).max(280),
+    evidence: z.array(z.string().min(2).max(48)).min(1).max(5),
+    sourceId: z.string().min(1).max(48),
+    impact: z.enum(["high", "medium", "low"]),
+  })).min(1).max(6),
+  sources: z.array(blockSourceSchema).min(1).max(8),
+  footerNote: z.string().min(2).max(260).optional(),
+});
 
 const toolSimulatorPropsSchema = z.object({
   title: z.string().min(2).max(90),
@@ -185,6 +253,9 @@ export const mizanElementSchema = z.discriminatedUnion("type", [
   element("InsightList", insightListPropsSchema),
   element("Callout", calloutPropsSchema),
   element("ActionLinks", actionLinksPropsSchema),
+  element("MetricStripBlock", metricStripBlockPropsSchema),
+  element("RankingTableBlock", rankingTableBlockPropsSchema),
+  element("TimelineFeedBlock", timelineFeedBlockPropsSchema),
   element("ToolSimulator", toolSimulatorPropsSchema),
   element("ToolLaunch", toolLaunchPropsSchema),
   element("Suggestions", suggestionsPropsSchema),
@@ -270,8 +341,13 @@ const loosePropsSchema = z.object({
   metric: metricKeySchema.optional(),
   description: z.string().optional(),
   tone: toneSchema.optional(),
-  sources: z.array(sourceKeySchema).optional(),
+  sources: z.array(z.unknown()).optional(),
   indicators: z.array(investmentIndicatorKeySchema).optional(),
+  metrics: z.array(z.record(z.string(), z.unknown())).optional(),
+  rows: z.array(z.record(z.string(), z.unknown())).optional(),
+  signals: z.array(z.record(z.string(), z.unknown())).optional(),
+  metricLabel: z.string().optional(),
+  footerNote: z.string().optional(),
   items: z.array(z.record(z.string(), z.unknown())).optional(),
   body: z.string().optional(),
   links: z.array(z.record(z.string(), z.unknown())).optional(),
@@ -338,9 +414,21 @@ export const mizanJsonCatalog = defineCatalog(jsonRenderReactSchema, {
       props: actionLinksPropsSchema,
       description: "Links to first-party Mizan pages and tools.",
     },
+    MetricStripBlock: {
+      props: metricStripBlockPropsSchema,
+      description: "Storyboard metric strip for sourced headline metrics, source rail, and compact explanatory detail.",
+    },
+    RankingTableBlock: {
+      props: rankingTableBlockPropsSchema,
+      description: "Storyboard comparison table for side-by-side ranking, source links, context, and trend signals.",
+    },
+    TimelineFeedBlock: {
+      props: timelineFeedBlockPropsSchema,
+      description: "Storyboard timeline feed for recent events, evidence chips, impact labels, and source rail.",
+    },
     ToolSimulator: {
       props: toolSimulatorPropsSchema,
-      description: "Inline first-party simulator with deterministic controls and sourced defaults.",
+      description: "Inline first-party simulator with interactive controls and sourced defaults.",
     },
     ToolLaunch: {
       props: toolLaunchPropsSchema,
@@ -360,12 +448,16 @@ You are generating a @json-render/react flat spec for Mizan.
 Planner loop:
 1. Read the user's prompt and chat history.
 2. Read the capability/data scan, especially promptMatch, availability, dataDomains, and appCapabilities.
-3. Select the smallest useful set of data domains and components.
-4. Return one coherent UI spec. Never describe this planning loop to the user.
+3. Use promptMatch.extractedInputs when present; do not ignore named strategies, amounts, horizons, or comparison pairs.
+4. Select the smallest useful set of data domains and components.
+5. Return one coherent UI spec. Never describe this planning loop to the user.
 
 Allowed components:
 - MizanBoard({ lang, eyebrow, title, summary }) root container.
 - MizanGrid({ columns }) layout container.
+- MetricStripBlock({ eyebrow, heading, summary, metrics, sources, footerNote }) from the Storybook catalog. Default choice for sourced metric summaries.
+- RankingTableBlock({ eyebrow, heading, summary, metricLabel, rows, sources, footerNote }) from the Storybook catalog. Default choice for clean side-by-side comparisons, rankings, and trust comparisons.
+- TimelineFeedBlock({ eyebrow, heading, summary, signals, sources, footerNote }) from the Storybook catalog. Default choice for recent changes, evidence flow, or pipeline/process explanations.
 - MetricCard({ metric, title, description, tone }) where metric is one of: ${metricKeySchema.options.join(", ")}.
 - BudgetBars({ title, description }) for revenue/spending/deficit.
 - DebtSplit({ title, description }) for domestic/external debt split.
@@ -375,16 +467,23 @@ Allowed components:
 - InsightList({ title, items: [{ label, metric, note }] }) for compact analysis. Use metric keys for numeric anchors.
 - Callout({ title, body, tone }) for limitations or explanation.
 - ActionLinks({ title, links: [{ label, href, description }] }) for first-party navigation.
-- ToolSimulator({ title, description, tool: "simulate_egypt_investment", mode, inputs }) for rendering Mizan's investment simulator inline with prefilled inputs. Use mode "compare" when the user asks to compare scenarios, strategies, nominal vs real return, or returns vs inflation.
+- ToolSimulator({ title, description, tool: "simulate_egypt_investment", mode, inputs }) for rendering Mizan's investment simulator inline with prefilled inputs. Use mode "compare" when the user asks to compare scenarios, strategies, nominal vs real return, or returns vs inflation. For named strategy comparisons, set inputs.compareStrategies to the exact strategies requested, e.g. ["conservative", "aggressive"].
 - Suggestions({ prompts }) for 2-4 follow-up prompts.
 
 Rules:
 - Return a flat spec: { "root": "root", "elements": { ... }, "state": {... optional ...} }.
 - The root element must be MizanBoard.
 - First scan the provided capability/data inventory, then compose a view from the relevant Mizan data domains and components.
+- Treat promptMatch.candidateComponents as suggestions, not a workflow. Prefer Storybook blocks (MetricStripBlock, RankingTableBlock, TimelineFeedBlock) as the answer surface. Use low-level primitives only when they make the view clearer than a Storybook block.
 - Do not emit empty props. Every element must include the meaningful props listed for its component.
 - Do not emit JSX, CSS, markdown, arbitrary URLs, or component names outside the catalog.
 - Do not invent numbers. Use MetricCard/InsightList metric keys and the renderer will read values from Mizan data.
+- When using Storybook blocks, only use values and source URLs present in the provided Mizan data context or capability scan. Prefer fewer roomier blocks over many cramped cards.
+- When promptMatch.extractedInputs.compareStrategies is present, any ToolSimulator in compare mode must copy that exact array into inputs.compareStrategies.
+- When promptMatch.extractedInputs includes capitalEgp or horizonYears, copy those values into ToolSimulator inputs.
+- For investment comparison prompts, include ToolSimulator and a RankingTableBlock or MetricStripBlock that summarizes the compared strategies in a readable side-by-side way.
+- A comparison answer without RankingTableBlock or MetricStripBlock is incomplete. Do not answer comparison prompts with only IndicatorStrip, InsightList, SourceList, and Callout.
+- If candidateComponents includes RankingTableBlock, prefer it over low-level MetricCard/InsightList for the comparison surface.
 - Use SourceList when the user asks about trust, source quality, or wants citations.
 - For investment prompts, render scenario/risk/indicator context with IndicatorStrip, InsightList, SourceList, and Callout. Do not recommend a specific investment or allocation.
 - For investment scenario prompts that include amount, horizon, simulation, testing, or comparison language, include ToolSimulator and prefill any available inputs. Do not link out to tools for these prompts.
@@ -737,6 +836,10 @@ function numberFromUnknown(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
 function toolSimulatorInputs(value: unknown): ToolSimulatorInputs {
   const raw = isRecord(value) ? value : {};
   const inputs: ToolSimulatorInputs = {};
@@ -745,14 +848,104 @@ function toolSimulatorInputs(value: unknown): ToolSimulatorInputs {
   const inflationPct = numberFromUnknown(raw.inflationPct);
   const egpDepreciationPct = numberFromUnknown(raw.egpDepreciationPct);
   const strategy = investmentStrategySchema.safeParse(raw.strategy);
+  const compareStrategies = Array.isArray(raw.compareStrategies)
+    ? raw.compareStrategies
+      .map((item) => investmentStrategySchema.safeParse(item))
+      .filter((item): item is z.ZodSafeParseSuccess<z.infer<typeof investmentStrategySchema>> => item.success)
+      .map((item) => item.data)
+    : [];
 
   if (capitalEgp !== null && capitalEgp > 0 && capitalEgp <= 1_000_000_000) inputs.capitalEgp = capitalEgp;
   if (horizonYears !== null && horizonYears >= 1 && horizonYears <= 30) inputs.horizonYears = Math.round(horizonYears);
   if (inflationPct !== null && inflationPct >= 0 && inflationPct <= 100) inputs.inflationPct = inflationPct;
   if (egpDepreciationPct !== null && egpDepreciationPct >= 0 && egpDepreciationPct <= 100) inputs.egpDepreciationPct = egpDepreciationPct;
   if (strategy.success) inputs.strategy = strategy.data;
+  if (compareStrategies.length >= 2) inputs.compareStrategies = Array.from(new Set(compareStrategies)).slice(0, 5);
 
   return inputs;
+}
+
+function blockSources(value: unknown): z.infer<typeof blockSourceSchema>[] {
+  const parsed = Array.isArray(value)
+    ? value
+      .map((item) => blockSourceSchema.safeParse(item))
+      .filter((item): item is z.ZodSafeParseSuccess<z.infer<typeof blockSourceSchema>> => item.success)
+      .map((item) => item.data)
+    : [];
+
+  if (parsed.length > 0) return parsed.slice(0, 8);
+  return [{
+    id: "mizan",
+    label: "Mizan data",
+    url: "https://mizanmasr.com/transparency",
+    publisher: "Mizan",
+    confidence: "secondary",
+  }];
+}
+
+function metricDelta(value: unknown): z.infer<typeof metricDeltaSchema> | undefined {
+  const parsed = metricDeltaSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
+function metricStripMetrics(value: unknown): z.infer<typeof metricStripBlockPropsSchema>["metrics"] {
+  const rows = Array.isArray(value) ? value : [];
+  const parsed = rows
+    .map((item, index) => {
+      const raw = isRecord(item) ? item : {};
+      return {
+        id: typeof raw.id === "string" && raw.id ? raw.id : `metric-${index + 1}`,
+        label: textProp(raw, "label", "Metric"),
+        value: textProp(raw, "value", "—"),
+        detail: typeof raw.detail === "string" && raw.detail.trim() ? raw.detail.slice(0, 220) : undefined,
+        sourceId: typeof raw.sourceId === "string" && raw.sourceId ? raw.sourceId : "mizan",
+        delta: metricDelta(raw.delta),
+        emphasis: enumProp(z.enum(["primary", "default"]), raw.emphasis, "default"),
+      };
+    })
+    .filter((item) => item.label !== "Metric" || item.value !== "—");
+
+  return parsed.slice(0, 6);
+}
+
+function rankingRows(value: unknown): z.infer<typeof rankingTableBlockPropsSchema>["rows"] {
+  const rows = Array.isArray(value) ? value : [];
+  const parsed = rows
+    .map((item, index) => {
+      const raw = isRecord(item) ? item : {};
+      const score = numberFromUnknown(raw.score);
+      return {
+        id: typeof raw.id === "string" && raw.id ? raw.id : `row-${index + 1}`,
+        label: textProp(raw, "label", `Item ${index + 1}`),
+        value: textProp(raw, "value", score === null ? "—" : `${Math.round(score)} / 100`),
+        score: clampNumber(score ?? 50, 0, 100),
+        sourceId: typeof raw.sourceId === "string" && raw.sourceId ? raw.sourceId : "mizan",
+        context: typeof raw.context === "string" && raw.context.trim() ? raw.context.slice(0, 240) : undefined,
+        trend: metricDelta(raw.trend),
+      };
+    });
+
+  return parsed.length >= 2 ? parsed.slice(0, 8) : [];
+}
+
+function timelineSignals(value: unknown): z.infer<typeof timelineFeedBlockPropsSchema>["signals"] {
+  const rows = Array.isArray(value) ? value : [];
+  const parsed = rows
+    .map((item, index) => {
+      const raw = isRecord(item) ? item : {};
+      return {
+        id: typeof raw.id === "string" && raw.id ? raw.id : `signal-${index + 1}`,
+        label: textProp(raw, "label", `Signal ${index + 1}`),
+        eventDate: textProp(raw, "eventDate", new Date().toISOString().slice(0, 10)),
+        summary: textProp(raw, "summary", "Sourced signal from the available Mizan context."),
+        evidence: stringArray(raw.evidence).slice(0, 5),
+        sourceId: typeof raw.sourceId === "string" && raw.sourceId ? raw.sourceId : "mizan",
+        impact: enumProp(z.enum(["high", "medium", "low"]), raw.impact, "medium"),
+      };
+    })
+    .map((item) => ({ ...item, evidence: item.evidence.length > 0 ? item.evidence : ["source context"] }));
+
+  return parsed.slice(0, 6);
 }
 
 function amountMultiplier(unit: string | undefined): number {
@@ -802,24 +995,42 @@ function parsePromptHorizon(prompt: string): number | null {
   return null;
 }
 
-function parsePromptStrategy(prompt: string): z.infer<typeof investmentStrategySchema> | undefined {
+const promptStrategyPatterns: Array<{
+  strategy: z.infer<typeof investmentStrategySchema>;
+  pattern: RegExp;
+}> = [
+  { strategy: "conservative", pattern: /\bconservative\b|محافظ/i },
+  { strategy: "aggressive", pattern: /\b(aggressive|high risk)\b|مخاطر عالية|هجومي/i },
+  { strategy: "fixedIncome", pattern: /\b(fixed income|t-?bills?|treasury|certificates?|cds?)\b|أذون|خزانة|شهادات|دخل ثابت/i },
+  { strategy: "egyptianGrowth", pattern: /\b(egypt growth|egyptian growth|egx|stocks?|growth)\b|بورصة|أسهم|نمو/i },
+  { strategy: "balanced", pattern: /\bbalanced\b|متوازن/i },
+];
+
+function parsePromptStrategies(prompt: string): z.infer<typeof investmentStrategySchema>[] {
   const normalized = prompt.toLowerCase();
-  if (/\b(fixed income|t-?bill|treasury|certificate|cd|conservative)\b|أذون|خزانة|شهادات|دخل ثابت|محافظ/.test(normalized)) return "fixedIncome";
-  if (/\b(aggressive|high risk)\b|مخاطر عالية|هجومي/.test(normalized)) return "aggressive";
-  if (/\b(egx|stocks?|growth)\b|بورصة|أسهم|نمو/.test(normalized)) return "egyptianGrowth";
-  if (/\bbalanced\b|متوازن/.test(normalized)) return "balanced";
-  return undefined;
+  const mentions = promptStrategyPatterns
+    .map(({ strategy, pattern }) => {
+      const match = pattern.exec(normalized);
+      return match ? { strategy, index: match.index } : null;
+    })
+    .filter((item): item is { strategy: z.infer<typeof investmentStrategySchema>; index: number } => item !== null)
+    .sort((a, b) => a.index - b.index)
+    .map((item) => item.strategy);
+
+  return Array.from(new Set(mentions));
 }
 
 function extractInvestmentScenarioInputs(prompt: string): ToolSimulatorInputs {
   const inputs: ToolSimulatorInputs = {};
   const capitalEgp = parsePromptAmount(prompt);
   const horizonYears = parsePromptHorizon(prompt);
-  const strategy = parsePromptStrategy(prompt);
+  const strategies = parsePromptStrategies(prompt);
+  const strategy = strategies[0];
 
   if (capitalEgp !== null) inputs.capitalEgp = capitalEgp;
   if (horizonYears !== null) inputs.horizonYears = horizonYears;
   if (strategy) inputs.strategy = strategy;
+  if (strategies.length >= 2 && hasInvestmentComparisonRequest(prompt)) inputs.compareStrategies = strategies;
 
   return inputs;
 }
@@ -1032,6 +1243,58 @@ function coerceElement(
           href: "/methodology",
           description: ar ? "راجع طريقة جمع البيانات وتوثيقها." : "Review how Mizan collects and documents data.",
         }],
+      },
+      children,
+    };
+  }
+
+  if (type === "MetricStripBlock") {
+    const metrics = metricStripMetrics(props.metrics);
+    if (metrics.length === 0) return null;
+    return {
+      type,
+      props: {
+        eyebrow: typeof props.eyebrow === "string" && props.eyebrow.trim() ? props.eyebrow.slice(0, 36) : undefined,
+        heading: textProp(props, "heading", ar ? "ملخص مؤشرات" : "Metric summary"),
+        summary: textProp(props, "summary", ar ? "ملخص من بيانات ميزان الموثقة." : "A sourced summary from Mizan data."),
+        metrics,
+        sources: blockSources(props.sources),
+        footerNote: typeof props.footerNote === "string" && props.footerNote.trim() ? props.footerNote.slice(0, 260) : undefined,
+      },
+      children,
+    };
+  }
+
+  if (type === "RankingTableBlock") {
+    const rows = rankingRows(props.rows);
+    if (rows.length < 2) return null;
+    return {
+      type,
+      props: {
+        eyebrow: typeof props.eyebrow === "string" && props.eyebrow.trim() ? props.eyebrow.slice(0, 36) : undefined,
+        heading: textProp(props, "heading", ar ? "مقارنة" : "Comparison"),
+        summary: textProp(props, "summary", ar ? "مقارنة منظمة من بيانات ميزان." : "A structured comparison from Mizan data."),
+        metricLabel: textProp(props, "metricLabel", ar ? "المؤشر" : "Metric"),
+        rows,
+        sources: blockSources(props.sources),
+        footerNote: typeof props.footerNote === "string" && props.footerNote.trim() ? props.footerNote.slice(0, 260) : undefined,
+      },
+      children,
+    };
+  }
+
+  if (type === "TimelineFeedBlock") {
+    const signals = timelineSignals(props.signals);
+    if (signals.length === 0) return null;
+    return {
+      type,
+      props: {
+        eyebrow: typeof props.eyebrow === "string" && props.eyebrow.trim() ? props.eyebrow.slice(0, 36) : undefined,
+        heading: textProp(props, "heading", ar ? "تسلسل زمني" : "Timeline"),
+        summary: textProp(props, "summary", ar ? "تسلسل إشارات موثقة من بيانات ميزان." : "A sequence of sourced signals from Mizan data."),
+        signals,
+        sources: blockSources(props.sources),
+        footerNote: typeof props.footerNote === "string" && props.footerNote.trim() ? props.footerNote.slice(0, 260) : undefined,
       },
       children,
     };
@@ -1257,6 +1520,49 @@ export function ensureInvestmentSimulator(spec: MizanJsonSpec, prompt: string, l
   attachChildToGrid(elements, spec.root, simulatorId);
 
   return { ...spec, elements };
+}
+
+export function applyPromptInputsToExistingSimulator(spec: MizanJsonSpec, prompt: string): MizanJsonSpec {
+  const inputs = extractInvestmentScenarioInputs(prompt);
+  const forceCompareMode = hasInvestmentComparisonRequest(prompt);
+  if (Object.keys(inputs).length === 0 && !forceCompareMode) return spec;
+
+  let changed = false;
+  const elements: MizanJsonSpec["elements"] = {};
+  for (const [id, item] of Object.entries(spec.elements)) {
+    if (item.type === "ToolSimulator") {
+      changed = true;
+      elements[id] = {
+        ...item,
+        props: {
+          ...item.props,
+          mode: forceCompareMode ? "compare" : item.props.mode,
+          inputs: {
+            ...item.props.inputs,
+            ...inputs,
+          },
+        },
+      };
+      continue;
+    }
+    if (item.type === "ToolLaunch") {
+      changed = true;
+      elements[id] = {
+        ...item,
+        props: {
+          ...item.props,
+          inputs: {
+            ...item.props.inputs,
+            ...inputs,
+          },
+        },
+      };
+      continue;
+    }
+    elements[id] = item;
+  }
+
+  return changed ? { ...spec, elements } : spec;
 }
 
 function makeDebtComparisonFallbackSpec(lang: Lang): MizanJsonSpec {

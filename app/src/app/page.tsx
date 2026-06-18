@@ -17,6 +17,11 @@ import {
 } from "lucide-react";
 import { api } from "../../convex/_generated/api";
 import { AiPipelineStatus } from "@/components/ai-pipeline-status";
+import {
+  MetricStripBlock,
+  RankingTableBlock,
+  TimelineFeedBlock,
+} from "@/components/generative-ui";
 import { NewsTicker } from "@/components/news-ticker";
 import { SanadBadge } from "@/components/sanad-badge";
 import { Skeleton } from "@/components/skeleton";
@@ -441,7 +446,10 @@ function simulatorAreaPath(values: number[], width: number, height: number): str
   return `${line} L${width},${height - 8} L0,${height - 8} Z`;
 }
 
-function comparisonStrategies(primary: SimulatorStrategy): SimulatorStrategy[] {
+function comparisonStrategies(primary: SimulatorStrategy, requested: SimulatorStrategy[] | undefined): SimulatorStrategy[] {
+  if (requested && requested.length >= 2) {
+    return Array.from(new Set(requested)).slice(0, 5);
+  }
   const candidates: SimulatorStrategy[] = primary === "fixedIncome"
     ? ["fixedIncome", "balanced", "egyptianGrowth"]
     : [primary, "fixedIncome", "balanced"];
@@ -470,6 +478,7 @@ function InvestmentSimulatorBlock({
   const [strategy, setStrategy] = useState<SimulatorStrategy>(initialInputs.strategy ?? "balanced");
   const [inflation, setInflation] = useState(initialInputs.inflationPct ?? investmentIndicatorValue(investmentDefaults, "inflation", 12));
   const [depreciation, setDepreciation] = useState(initialInputs.egpDepreciationPct ?? 7);
+  const requestedComparison = initialInputs.compareStrategies;
 
   useEffect(() => {
     setCapital(initialInputs.capitalEgp ?? 100_000);
@@ -513,9 +522,9 @@ function InvestmentSimulatorBlock({
     }
 
     const current = build(strategy);
-    const comparison = comparisonStrategies(strategy).map((strategyKey) => build(strategyKey));
+    const comparison = comparisonStrategies(strategy, requestedComparison).map((strategyKey) => build(strategyKey));
     return { ...current, comparison, exchangeRate };
-  }, [capital, depreciation, horizon, inflation, investmentDefaults, strategy]);
+  }, [capital, depreciation, horizon, inflation, investmentDefaults, requestedComparison, strategy]);
 
   const source = investmentSource(investmentDefaults);
   const nominalPath = simulatorLinePath(projection.rows.map((row) => row.nominal), 280, 90);
@@ -663,7 +672,7 @@ function InvestmentSimulatorBlock({
                 <p className="text-xs font-bold">{lang === "ar" ? "مقارنة جانبية" : "Side-by-side comparison"}</p>
                 <p className="text-[0.68rem] text-muted-foreground">{lang === "ar" ? "نهاية المدة" : "End of horizon"}</p>
               </div>
-              <div className="grid gap-2 md:grid-cols-3">
+              <div className={cn("grid gap-2", projection.comparison.length <= 2 ? "md:grid-cols-2" : "md:grid-cols-3")}>
                 {projection.comparison.map((item) => (
                   <div key={item.strategy} className={cn(
                     "rounded-[8px] border p-3",
@@ -1095,6 +1104,15 @@ function MizanRenderer({
       ),
       ToolLaunch: ({ props }) => (
         <InvestmentSimulatorBlock props={props} investmentDefaults={investmentDefaults} lang={lang} />
+      ),
+      MetricStripBlock: ({ props }) => (
+        <MetricStripBlock {...props} />
+      ),
+      RankingTableBlock: ({ props }) => (
+        <RankingTableBlock {...props} />
+      ),
+      TimelineFeedBlock: ({ props }) => (
+        <TimelineFeedBlock {...props} />
       ),
       Suggestions: ({ props }) => (
         <div className="mt-5 flex flex-wrap gap-2 border-t border-border/60 pt-4">

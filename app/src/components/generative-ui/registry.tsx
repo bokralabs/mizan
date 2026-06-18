@@ -24,7 +24,7 @@ export const generativeBlockRegistry: RegistryMap = {
     kind: "rankingTable",
     label: "Ranking Table",
     description:
-      "Deterministic comparison block for entities ranked by a structured score.",
+      "Clean comparison block for entities ranked by a structured score.",
     render: (payload) => <RankingTableBlock {...payload} />,
   },
   timelineFeed: {

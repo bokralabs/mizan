@@ -481,7 +481,7 @@ function LiveWorkbenchPreview() {
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
               <span className="workbench-label rounded-[6px] border border-primary bg-primary/15 px-2.5 py-1 text-primary">
-                json-render
+                live board
               </span>
               <span className="rounded-[6px] border border-primary bg-primary/15 px-2.5 py-1 text-xs font-semibold">
                 Adding to the page
@@ -561,7 +561,7 @@ export const LiveChatWorkbench = {
       <SectionHeader
         eyebrow="Chat surface"
         title="Live chat with generated UI rendering"
-        description="A workbench composition for the home chat rail, render queue, and deterministic answer blocks."
+        description="A workbench composition for the home chat rail, render feedback, and sourced answer blocks."
       />
       <LiveWorkbenchPreview />
     </StoryShell>
@@ -578,7 +578,7 @@ export const StoryboardCatalog = {
           </p>
           <div className="space-y-3">
             <h1 className="max-w-4xl text-4xl font-semibold text-foreground">
-              Catalog of deterministic answer blocks for the Mizan board
+              Catalog of sourced answer blocks for the Mizan board
             </h1>
             <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
               A single storyboard for all currently available generative UI
@@ -638,7 +638,7 @@ export const MetricStrips = {
       <SectionHeader
         eyebrow="Metrics"
         title="Metric strip layouts"
-        description="Wide and compact metric strip variants using the same deterministic block API."
+        description="Wide and compact metric strip variants using the same structured block API."
       />
       <MetricStripBlock {...fiscalPulseData} />
       <div className="mx-auto w-full max-w-3xl">

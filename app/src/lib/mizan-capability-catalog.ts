@@ -36,6 +36,12 @@ type PromptMatch = {
   matchedDataDomains: string[];
   matchedAppCapabilities: string[];
   candidateComponents: string[];
+  extractedInputs: {
+    capitalEgp?: number;
+    horizonYears?: number;
+    strategy?: string;
+    compareStrategies?: string[];
+  };
   guidance: string;
 };
 
@@ -46,7 +52,7 @@ const DATA_DOMAINS: DataDomain[] = [
     description: "Debt level, debt-to-GDP, domestic/external split, and source reliability.",
     metrics: ["debtTotal", "debtGdp", "externalDebt", "domesticDebt"],
     sources: ["totalDebt", "externalDebt", "domesticDebt"],
-    preferredComponents: ["MetricCard", "DebtSplit", "SourceList", "InsightList"],
+    preferredComponents: ["MetricStripBlock", "RankingTableBlock", "DebtSplit", "SourceList", "InsightList"],
   },
   {
     id: "budget",
@@ -54,7 +60,7 @@ const DATA_DOMAINS: DataDomain[] = [
     description: "Budget year, revenue, expenditure, deficit, and fiscal pressure context.",
     metrics: ["budgetYear", "budgetRevenue", "budgetSpending", "budgetDeficit"],
     sources: ["budget"],
-    preferredComponents: ["MetricCard", "BudgetBars", "SourceList", "InsightList"],
+    preferredComponents: ["MetricStripBlock", "TimelineFeedBlock", "BudgetBars", "SourceList", "InsightList"],
   },
   {
     id: "state-institutions",
@@ -62,7 +68,7 @@ const DATA_DOMAINS: DataDomain[] = [
     description: "Government, parliament, governorates, and constitutional structure.",
     metrics: ["ministries", "parliament", "governorates", "constitutionArticles"],
     sources: ["ministries", "parliament", "governorates", "constitutionArticles"],
-    preferredComponents: ["EntityGrid", "MetricCard", "SourceList", "InsightList"],
+    preferredComponents: ["MetricStripBlock", "RankingTableBlock", "EntityGrid", "SourceList", "InsightList"],
   },
   {
     id: "investment-context",
@@ -70,7 +76,7 @@ const DATA_DOMAINS: DataDomain[] = [
     description: "Sourced indicators for Egyptian investment context, risk, inflation, exchange rate, and returns.",
     metrics: [],
     sources: ["investmentIndicators"],
-    preferredComponents: ["IndicatorStrip", "InsightList", "SourceList", "Callout"],
+    preferredComponents: ["ToolSimulator", "MetricStripBlock", "RankingTableBlock", "IndicatorStrip", "InsightList", "SourceList", "Callout"],
   },
 ];
 
@@ -80,7 +86,7 @@ const APP_CAPABILITIES: AppCapability[] = [
     label: "Investment simulator",
     href: "/tools/invest",
     purpose: "Compare portfolio scenarios across Egypt-focused asset classes.",
-    inputs: ["capitalEgp", "horizonYears", "strategy", "inflationPct", "egpDepreciationPct"],
+    inputs: ["capitalEgp", "horizonYears", "strategy", "compareStrategies", "inflationPct", "egpDepreciationPct"],
     output: "Projected nominal, real, and USD-adjusted results.",
     useWhen: ["scenario", "portfolio", "returns", "investment", "capital", "horizon"],
   },
@@ -164,6 +170,82 @@ function matchesAny(text: string, patterns: RegExp[]): boolean {
   return patterns.some((pattern) => pattern.test(text));
 }
 
+function amountMultiplier(unit: string | undefined): number {
+  if (!unit) return 1;
+  const normalized = unit.toLowerCase();
+  if (normalized === "k" || normalized === "ألف" || normalized === "الف") return 1_000;
+  if (normalized === "m" || normalized === "mn" || normalized === "million" || normalized === "مليون") return 1_000_000;
+  return 1;
+}
+
+function parsePromptAmount(prompt: string): number | undefined {
+  const patterns = [
+    /\b(?:egp|e£)\s*([0-9][\d,.]*)(?:\s*(k|m|mn|million))?/i,
+    /([0-9][\d,.]*)(?:\s*(k|m|mn|million))?\s*(?:egp|e£)\b/i,
+    /(?:جنيه|ج\.م)\s*([0-9][\d,.]*)(?:\s*(ألف|الف|مليون))?/i,
+    /([0-9][\d,.]*)(?:\s*(ألف|الف|مليون))?\s*(?:جنيه|ج\.م)/i,
+    /\b([0-9][\d,.]*)\s*(k|m|mn|million)\b/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = prompt.match(pattern);
+    if (!match) continue;
+    const rawValue = Number(match[1]?.replace(/,/g, ""));
+    if (!Number.isFinite(rawValue)) continue;
+    const amount = rawValue * amountMultiplier(match[2]);
+    if (amount > 0 && amount <= 1_000_000_000) return amount;
+  }
+  return undefined;
+}
+
+function parsePromptHorizon(prompt: string): number | undefined {
+  const patterns = [
+    /\b(?:over|for|in)\s+([1-9]|[12][0-9]|30)\s*(?:years?|yrs?|yr)\b/i,
+    /\b([1-9]|[12][0-9]|30)\s*(?:years?|yrs?|yr)\b/i,
+    /(?:لمدة|خلال|في)\s*([1-9]|[12][0-9]|30)\s*(?:سنوات|سنين|سنة|عام)/,
+    /([1-9]|[12][0-9]|30)\s*(?:سنوات|سنين|سنة|عام)/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = prompt.match(pattern);
+    if (!match) continue;
+    const years = Number(match[1]);
+    if (Number.isInteger(years) && years >= 1 && years <= 30) return years;
+  }
+  return undefined;
+}
+
+function parsePromptStrategies(prompt: string): string[] {
+  const normalized = prompt.toLowerCase();
+  const patterns: Array<{ strategy: string; pattern: RegExp }> = [
+    { strategy: "conservative", pattern: /\bconservative\b|محافظ/i },
+    { strategy: "aggressive", pattern: /\b(aggressive|high risk)\b|مخاطر عالية|هجومي/i },
+    { strategy: "fixedIncome", pattern: /\b(fixed income|t-?bills?|treasury|certificates?|cds?)\b|أذون|خزانة|شهادات|دخل ثابت/i },
+    { strategy: "egyptianGrowth", pattern: /\b(egypt growth|egyptian growth|egx|stocks?|growth)\b|بورصة|أسهم|نمو/i },
+    { strategy: "balanced", pattern: /\bbalanced\b|متوازن/i },
+  ];
+  return [...new Set(patterns
+    .map(({ strategy, pattern }) => {
+      const match = pattern.exec(normalized);
+      return match ? { strategy, index: match.index } : null;
+    })
+    .filter((item): item is { strategy: string; index: number } => item !== null)
+    .sort((a, b) => a.index - b.index)
+    .map((item) => item.strategy))];
+}
+
+function buildExtractedInputs(prompt: string): PromptMatch["extractedInputs"] {
+  const strategies = parsePromptStrategies(prompt);
+  const capitalEgp = parsePromptAmount(prompt);
+  const horizonYears = parsePromptHorizon(prompt);
+  return {
+    ...(capitalEgp !== undefined ? { capitalEgp } : {}),
+    ...(horizonYears !== undefined ? { horizonYears } : {}),
+    ...(strategies[0] ? { strategy: strategies[0] } : {}),
+    ...(strategies.length >= 2 ? { compareStrategies: strategies } : {}),
+  };
+}
+
 function buildPromptMatch(prompt: string | undefined): PromptMatch {
   const text = (prompt ?? "").toLowerCase();
   const matchedDataDomains = DATA_DOMAINS
@@ -178,7 +260,7 @@ function buildPromptMatch(prompt: string | undefined): PromptMatch {
         return matchesAny(text, [/\bgovernment\b/, /\bparliament\b/, /\bminister\b/, /\bconstitution\b/, /\bgovernorate\b/, /حكومة|برلمان|وزارة|دستور|محافظة/]);
       }
       if (domain.id === "investment-context") {
-        return matchesAny(text, [/\binvest\b/, /\binvestment\b/, /\bportfolio\b/, /\breturn\b/, /\byield\b/, /\btreasury\b/, /\bt-?bill\b/, /\bcertificate\b/, /\bcd\b/, /\bgold\b/, /\begx\b/, /\bstocks?\b/, /\breal estate\b/, /\bmortgage\b/, /\bassets?\b/, /\bwhere should i (put|invest)\b/, /\b(test|simulate|scenario|project|projection|try|run)\b.*\b(egp|e£|years?|yrs?|k|m|million)\b/, /استثمار|استثمر|محفظة|عائد|عوائد|ذهب|بورصة|أسهم|عقار|شهادات|أذون|خزانة|تمويل عقاري|اختبر|حاكي|سيناريو/]);
+        return matchesAny(text, [/\binvest\b/, /\binvestment\b/, /\bportfolio\b/, /\breturns?\b/, /\byield\b/, /\btreasury\b/, /\bt-?bill\b/, /\bcertificate\b/, /\bcd\b/, /\bgold\b/, /\begx\b/, /\bstocks?\b/, /\breal estate\b/, /\bmortgage\b/, /\bassets?\b/, /\bwhere should i (put|invest)\b/, /\b(test|simulate|scenario|project|projection|try|run)\b.*\b(egp|e£|years?|yrs?|k|m|million)\b/, /استثمار|استثمر|محفظة|عائد|عوائد|ذهب|بورصة|أسهم|عقار|شهادات|أذون|خزانة|تمويل عقاري|اختبر|حاكي|سيناريو/]);
       }
       return false;
     })
@@ -199,6 +281,7 @@ function buildPromptMatch(prompt: string | undefined): PromptMatch {
     matchedDataDomains,
     matchedAppCapabilities,
     candidateComponents,
+    extractedInputs: buildExtractedInputs(prompt ?? ""),
     guidance: matchedDataDomains.length > 0
       ? "Use these matches as the starting point, then compose naturally from the allowed catalog."
       : "No exact domain match. Compose the closest useful Mizan data view and ask a specific follow-up.",

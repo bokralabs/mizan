@@ -1,5 +1,4 @@
 import { ArrowUpRight, Minus, TrendingDown, TrendingUp } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { BlockFrame, SourceRail, getSourceById } from "@/components/generative-ui/block-frame";
 import {
   Table,
@@ -193,16 +192,6 @@ export function RankingTableBlock({
           </TableBody>
         </Table>
         </div>
-      </div>
-
-      <div className="flex items-start justify-between gap-4">
-        <div className="max-w-2xl text-sm leading-6 text-muted-foreground">
-          Rows are deterministic: each label, score, and signal resolves from the
-          structured payload instead of ad-hoc prose generation.
-        </div>
-        <Badge variant="outline" className="rounded-[6px] border-border/70 bg-background/70">
-          Agent-safe table block
-        </Badge>
       </div>
 
       <SourceRail sources={sources} />

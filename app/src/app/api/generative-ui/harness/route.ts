@@ -5,7 +5,7 @@ import { z } from "zod";
 import { buildMizanCapabilityContext } from "@/lib/mizan-capability-catalog";
 import {
   MIZAN_GENERATIVE_CATALOG_PROMPT,
-  ensureInvestmentSimulator,
+  applyPromptInputsToExistingSimulator,
   langSchema,
   looseMizanJsonSpecSchema,
   makePromptFallbackSpec,
@@ -193,79 +193,6 @@ function isSparseSpec(spec: ReturnType<typeof normalizeMizanSpec>): boolean {
   return contentCount === 0;
 }
 
-function hasSourceTrustIntent(prompt: string): boolean {
-  const normalized = prompt.toLowerCase();
-  return /\b(source|sources|trust|trusted|sanad|citation|citations|reliable|reliability|verify|verification)\b/.test(normalized)
-    || /مصدر|مصادر|ثقة|سند|موثوق|موثوقة|تحقق|توثيق/.test(prompt);
-}
-
-function hasDebtComparisonIntent(prompt: string): boolean {
-  const normalized = prompt.toLowerCase();
-  return (
-    /\b(compare|comparison|versus|vs)\b/.test(normalized)
-    || /قارن|مقارنة|مقابل/.test(prompt)
-  ) && (
-    /\b(debt|external|domestic)\b/.test(normalized)
-    || /دين|خارجي|محلي/.test(prompt)
-  );
-}
-
-function hasInvestmentIntent(prompt: string): boolean {
-  const normalized = prompt.toLowerCase();
-  return /\b(invest|investment|portfolio|return|yield|treasury|t-?bill|certificate|cd|gold|egx|stock|stocks|real estate|mortgage|asset|assets|where should i put|where should i invest)\b/.test(normalized)
-    || /\b(test|simulate|scenario|project|projection|try|run)\b.*\b(egp|e£|years?|yrs?|k|m|million)\b/.test(normalized)
-    || /استثمار|استثمر|استثمرت|محفظة|عائد|عوائد|ذهب|بورصة|أسهم|عقار|شهادات|أذون|خزانة|تمويل عقاري/.test(prompt);
-}
-
-function isSourceTrustSpec(spec: ReturnType<typeof normalizeMizanSpec>): boolean {
-  if (spec.state?.intent === "sources") return true;
-  const root = spec.elements[spec.root];
-  if (
-    root?.type === "MizanBoard"
-    && /\b(source|sources|sanad|reliability|trust)\b|مصدر|مصادر|سند|موثوق/.test(`${root.props.title} ${root.props.summary}`.toLowerCase())
-  ) {
-    return true;
-  }
-  return Object.values(spec.elements).some((item) => (
-    item.type === "Callout"
-    && /\b(source|sources|sanad|reliability|trust)\b|مصدر|مصادر|سند|موثوق/.test(`${item.props.title} ${item.props.body}`.toLowerCase())
-  ));
-}
-
-function isDebtComparisonSpec(spec: ReturnType<typeof normalizeMizanSpec>): boolean {
-  if (spec.state?.intent === "debt-comparison") return true;
-  const root = spec.elements[spec.root];
-  const rootText = root?.type === "MizanBoard"
-    ? `${root.props.title} ${root.props.summary}`.toLowerCase()
-    : "";
-  const hasComparisonFrame = /\b(compare|comparison|versus|vs|external.+domestic|domestic.+external)\b/.test(rootText)
-    || /قارن|مقارنة|مقابل|خارجي.+محلي|محلي.+خارجي/.test(rootText);
-  const values = Object.values(spec.elements);
-  const hasSplit = values.some((item) => item.type === "DebtSplit");
-  const hasExternal = values.some((item) => item.type === "MetricCard" && item.props.metric === "externalDebt");
-  const hasDomestic = values.some((item) => item.type === "MetricCard" && item.props.metric === "domesticDebt");
-  return hasComparisonFrame && hasSplit && hasExternal && hasDomestic;
-}
-
-function isInvestmentSpec(spec: ReturnType<typeof normalizeMizanSpec>): boolean {
-  if (spec.state?.intent === "investment") return true;
-  const root = spec.elements[spec.root];
-  const rootText = root?.type === "MizanBoard"
-    ? `${root.props.title} ${root.props.summary}`.toLowerCase()
-    : "";
-  const hasInvestmentFrame = /\b(invest|investment|portfolio|returns?|yield|risk|indicator|scenario|asset)\b/.test(rootText)
-    || /استثمار|محفظة|عائد|مخاطر|مؤشر|سيناريو|أصل/.test(rootText);
-  const values = Object.values(spec.elements);
-  const hasInvestmentPrimitive = values.some((item) => (
-    item.type === "IndicatorStrip"
-    || item.type === "ToolSimulator"
-    || item.type === "ToolLaunch"
-    || (item.type === "SourceList" && item.props.sources.includes("investmentIndicators"))
-    || (item.type === "ActionLinks" && item.props.links.some((link) => link.href === "/tools/invest" || link.href === "/tools/mashroaak"))
-  ));
-  return hasInvestmentFrame && hasInvestmentPrimitive;
-}
-
 function responsePayloadForSpec(
   spec: ReturnType<typeof normalizeMizanSpec>,
   provider: string,
@@ -285,7 +212,7 @@ function responsePayloadForSpec(
 const SYSTEM_PROMPT = [
   "You are the Mizan-owned generative UI harness.",
   "You use the Vercel AI SDK as a library only. No Vercel-hosted runtime, no Sandbox, no HarnessAgent.",
-  "Your output is a deterministic json-render spec consumed by Mizan React components.",
+  "Your output is a typed json-render spec consumed by Mizan React components.",
   MIZAN_GENERATIVE_CATALOG_PROMPT,
 ].join("\n\n");
 
@@ -315,17 +242,7 @@ export async function POST(request: Request) {
     const normalizedSpec = candidateSpec.state?.fallback || isSparseSpec(candidateSpec)
       ? makePromptFallbackSpec(body.lang, body.prompt)
       : candidateSpec;
-    let responseSpec = normalizedSpec;
-    if (hasSourceTrustIntent(body.prompt) && !isSourceTrustSpec(responseSpec)) {
-      responseSpec = makePromptFallbackSpec(body.lang, body.prompt);
-    }
-    if (hasDebtComparisonIntent(body.prompt) && !isDebtComparisonSpec(responseSpec)) {
-      responseSpec = makePromptFallbackSpec(body.lang, body.prompt);
-    }
-    if (hasInvestmentIntent(body.prompt) && !isInvestmentSpec(responseSpec)) {
-      responseSpec = makePromptFallbackSpec(body.lang, body.prompt);
-    }
-    responseSpec = ensureInvestmentSimulator(responseSpec, body.prompt, body.lang);
+    const responseSpec = applyPromptInputsToExistingSimulator(normalizedSpec, body.prompt);
 
     return NextResponse.json(responsePayloadForSpec(responseSpec, provider, modelName, result.usage));
   } catch {
