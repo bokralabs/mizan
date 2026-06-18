@@ -247,6 +247,6 @@ export async function POST(request: Request) {
     return NextResponse.json(responsePayloadForSpec(responseSpec, provider, modelName, result.usage));
   } catch {
     const fallbackSpec = makePromptFallbackSpec(body.lang, body.prompt);
-    return NextResponse.json(responsePayloadForSpec(fallbackSpec, "deterministic-fallback", "mizan-catalog"));
+    return NextResponse.json(responsePayloadForSpec(fallbackSpec, "catalog-fallback", "mizan-ui-harness"));
   }
 }
