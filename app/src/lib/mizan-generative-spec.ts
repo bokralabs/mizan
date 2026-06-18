@@ -1041,6 +1041,13 @@ function hasInvestmentScenarioRequest(prompt: string): boolean {
     || /\b(test|simulate|scenario|project|projection|try|run)\b|اختبر|حاكي|سيناريو|جرّب|جرب/.test(prompt.toLowerCase());
 }
 
+function hasExplicitInvestmentToolRequest(prompt: string): boolean {
+  const normalized = prompt.toLowerCase();
+  const mentionsInvestment = /\binvest(?:ment|ing)?\b|\bportfolio\b|استثمار|محفظة/.test(normalized);
+  const mentionsTool = /\btool\b|\bsimulator\b|\bsimulation\b|\bcalculator\b|\bsimulate\b|أداة|اداة|محاكي|محاكاة|حاسبة/.test(normalized);
+  return mentionsInvestment && mentionsTool;
+}
+
 function hasInvestmentComparisonRequest(prompt: string): boolean {
   return /\b(compare|comparison|versus|vs|against|real return|inflation-adjusted|nominal|side by side|side-by-side)\b|قارن|مقارنة|مقابل|جنب/.test(prompt.toLowerCase());
 }
@@ -1484,9 +1491,22 @@ function attachChildToGrid(elements: MizanJsonSpec["elements"], rootId: string, 
   }
 }
 
+function promoteChildInGrid(elements: MizanJsonSpec["elements"], childId: string): void {
+  for (const [id, item] of Object.entries(elements)) {
+    if (item.type !== "MizanGrid" || !item.children?.includes(childId)) continue;
+    elements[id] = {
+      ...item,
+      children: [childId, ...item.children.filter((existingId) => existingId !== childId)],
+    };
+    return;
+  }
+}
+
 export function ensureInvestmentSimulator(spec: MizanJsonSpec, prompt: string, lang: Lang): MizanJsonSpec {
-  const wantsSimulator = hasInvestmentScenarioRequest(prompt) || hasInvestmentComparisonRequest(prompt);
-  if (!wantsSimulator || !specHasInvestmentContext(spec)) return spec;
+  const hasInvestmentContext = specHasInvestmentContext(spec);
+  const wantsSimulator = hasExplicitInvestmentToolRequest(prompt)
+    || ((hasInvestmentScenarioRequest(prompt) || hasInvestmentComparisonRequest(prompt)) && hasInvestmentContext);
+  if (!wantsSimulator) return spec;
 
   const simulator = investmentToolSimulator(lang, prompt);
   const existingSimulator = Object.entries(spec.elements).find(([, item]) => item.type === "ToolSimulator" || item.type === "ToolLaunch");
@@ -1511,6 +1531,7 @@ export function ensureInvestmentSimulator(spec: MizanJsonSpec, prompt: string, l
         children: item.children,
       };
       attachChildToGrid(elements, spec.root, id);
+      promoteChildInGrid(elements, id);
     }
     return { ...spec, elements };
   }
@@ -1518,6 +1539,7 @@ export function ensureInvestmentSimulator(spec: MizanJsonSpec, prompt: string, l
   const simulatorId = uniqueElementId(elements, "simulator");
   elements[simulatorId] = simulator;
   attachChildToGrid(elements, spec.root, simulatorId);
+  promoteChildInGrid(elements, simulatorId);
 
   return { ...spec, elements };
 }

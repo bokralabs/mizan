@@ -6,6 +6,7 @@ import { buildMizanCapabilityContext } from "@/lib/mizan-capability-catalog";
 import {
   MIZAN_GENERATIVE_CATALOG_PROMPT,
   applyPromptInputsToExistingSimulator,
+  ensureInvestmentSimulator,
   langSchema,
   looseMizanJsonSpecSchema,
   makePromptFallbackSpec,
@@ -242,7 +243,11 @@ export async function POST(request: Request) {
     const normalizedSpec = candidateSpec.state?.fallback || isSparseSpec(candidateSpec)
       ? makePromptFallbackSpec(body.lang, body.prompt)
       : candidateSpec;
-    const responseSpec = applyPromptInputsToExistingSimulator(normalizedSpec, body.prompt);
+    const responseSpec = ensureInvestmentSimulator(
+      applyPromptInputsToExistingSimulator(normalizedSpec, body.prompt),
+      body.prompt,
+      body.lang,
+    );
 
     return NextResponse.json(responsePayloadForSpec(responseSpec, provider, modelName, result.usage));
   } catch {
