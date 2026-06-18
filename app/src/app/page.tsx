@@ -326,7 +326,7 @@ function EvidenceLinks({
   className?: string;
 }) {
   return (
-    <div className={cn("inline-flex max-w-full shrink-0 flex-wrap items-center justify-end gap-1.5", className)}>
+    <div className={cn("inline-flex min-w-0 max-w-full flex-wrap items-center justify-end gap-1.5", className)}>
       <Link
         href={appHref}
         target="_blank"
@@ -1028,7 +1028,7 @@ function MizanRenderer({
           ? props.indicators
           : props.indicators.filter((key) => investmentDefaults[key] !== undefined);
         return (
-          <div className="workbench-tile min-w-0 rounded-[8px] border border-border/70 bg-card/80 p-4 animate-fade-up xl:col-span-12">
+          <div className="workbench-tile min-w-0 rounded-[8px] border border-border/70 bg-card/80 p-4 animate-fade-up xl:col-span-12" data-indicator-strip>
             <p className="text-sm font-bold">{props.title}</p>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">{props.description}</p>
             <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -1038,12 +1038,12 @@ function MizanRenderer({
                   ? { sourceUrl: record.sourceUrl, sanadLevel: record.sanadLevel }
                   : null;
                 return (
-                  <div key={key} className="rounded-[6px] border border-border/60 bg-background/70 p-3 animate-fade-up" style={{ animationDelay: `${index * 70}ms` }}>
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="text-xs font-semibold text-muted-foreground">{indicatorLabel(key, lang)}</p>
-                      <EvidenceLinks source={badgeSource} appHref="/economy" lang={lang} />
+                  <div key={key} data-indicator-card className="min-w-0 overflow-hidden rounded-[6px] border border-border/60 bg-background/70 p-3 animate-fade-up" style={{ animationDelay: `${index * 70}ms` }}>
+                    <div className="grid min-w-0 gap-2">
+                      <p className="mizan-text-safe min-w-0 text-xs font-semibold leading-5 text-muted-foreground">{indicatorLabel(key, lang)}</p>
+                      <EvidenceLinks source={badgeSource} appHref="/economy" lang={lang} className="w-full shrink justify-start" />
                     </div>
-                    <p className="mt-4 font-mono text-xl font-black text-foreground" dir="ltr">
+                    <p className="mizan-text-safe mt-5 font-mono text-xl font-black leading-tight text-foreground" dir="ltr">
                       {record ? formatIndicatorValue(record.value, record.unit) : "..."}
                     </p>
                     {record?.date && (
