@@ -301,6 +301,15 @@ function sourceLabel(sourceKey: SourceKey, lang: Lang): string {
   return labels[sourceKey];
 }
 
+function sourceHost(source: StatSource | null | undefined): string | null {
+  if (!source) return null;
+  try {
+    return new URL(source.sourceUrl).hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+
 function chartHoverLabel(label: string, value: string, detail: string): string {
   return `${label}: ${value}. ${detail}`;
 }
@@ -322,7 +331,7 @@ function EvidenceLinks({
         href={appHref}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex h-6 shrink-0 items-center gap-1 rounded-[6px] border border-border/70 bg-background/70 px-2 text-[0.65rem] font-semibold text-muted-foreground no-underline transition-colors hover:border-primary hover:text-primary"
+        className="inline-flex min-h-9 shrink-0 items-center gap-1 rounded-[6px] border border-border/70 bg-background/70 px-2.5 text-[0.7rem] font-semibold text-muted-foreground no-underline transition-colors hover:border-primary hover:text-primary"
       >
         {COPY[lang].labels.page}
         <ArrowUpRight size={10} />
@@ -333,7 +342,7 @@ function EvidenceLinks({
           target="_blank"
           rel="noopener noreferrer"
           aria-label={lang === "ar" ? "افتح المصدر الأصلي" : "Open original source"}
-          className="inline-flex h-6 max-w-full items-center gap-1.5 rounded-[6px] border border-border/70 bg-background/70 px-2 text-[0.65rem] font-semibold text-muted-foreground no-underline transition-colors hover:border-primary hover:text-primary"
+          className="inline-flex min-h-9 max-w-full items-center gap-1.5 rounded-[6px] border border-border/70 bg-background/70 px-2.5 text-[0.7rem] font-semibold text-muted-foreground no-underline transition-colors hover:border-primary hover:text-primary"
         >
           <SanadBadge sanadLevel={source.sanadLevel} showLabel focusable={false} />
           <ExternalLink size={10} />
@@ -553,7 +562,7 @@ function InvestmentSimulatorBlock({
               step={10_000}
               value={capital}
               onChange={(event) => setCapital(clampNumber(Number(event.target.value) || 0, 10_000, 1_000_000_000))}
-              className="h-10 rounded-[6px] border border-border/70 bg-card px-3 font-mono text-sm text-foreground outline-none focus:border-primary"
+              className="h-11 rounded-[6px] border border-border/70 bg-card px-3 font-mono text-sm text-foreground outline-none focus:border-primary"
               dir="ltr"
             />
           </label>
@@ -565,7 +574,7 @@ function InvestmentSimulatorBlock({
               max={30}
               value={horizon}
               onChange={(event) => setHorizon(Number(event.target.value))}
-              className="accent-primary"
+              className="h-11 accent-primary"
             />
           </label>
           <div className="grid gap-2">
@@ -577,7 +586,7 @@ function InvestmentSimulatorBlock({
                   type="button"
                   onClick={() => setStrategy(key)}
                   className={cn(
-                    "rounded-[6px] border px-2.5 py-1.5 text-[0.68rem] font-semibold transition-colors",
+                    "min-h-10 rounded-[6px] border px-3 py-2 text-[0.72rem] font-semibold transition-colors",
                     strategy === key
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-border/70 bg-card text-muted-foreground hover:border-primary hover:text-primary",
@@ -770,12 +779,12 @@ function MizanRenderer({
   const { registry } = useMemo(() => defineRegistry(mizanJsonCatalog, {
     components: {
       MizanBoard: ({ props, children }) => (
-        <section className="workbench-panel relative rounded-[8px] bg-card/90 p-4 animate-fade-up md:p-5" dir={props.lang === "ar" ? "rtl" : "ltr"}>
+        <section className="workbench-panel relative min-w-0 overflow-hidden rounded-[8px] bg-card/90 p-4 animate-fade-up md:p-5" dir={props.lang === "ar" ? "rtl" : "ltr"}>
           <div className="border-b border-border/80 pb-5">
             <span className="workbench-label rounded-[6px] border border-primary/40 bg-primary/10 px-2.5 py-1 text-primary">
               {props.eyebrow}
             </span>
-            <h2 className="mt-5 max-w-5xl text-2xl font-black leading-tight md:text-4xl">
+            <h2 className="mt-5 max-w-5xl text-2xl font-black leading-tight text-balance md:text-4xl">
               {props.title}
             </h2>
             <p className="mt-3 max-w-4xl text-sm leading-6 text-muted-foreground md:text-base">
@@ -786,7 +795,7 @@ function MizanRenderer({
         </section>
       ),
       MizanGrid: ({ children }) => (
-        <div className="grid grid-cols-1 gap-3 xl:grid-cols-12">
+        <div className="mizan-generated-grid grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-12">
           {children}
         </div>
       ),
@@ -997,8 +1006,13 @@ function MizanRenderer({
                 const source = sourceForKey(sourceKey, stats, investmentDefaults);
                 return (
                   <div key={sourceKey} data-source-row className="grid min-w-0 gap-2 rounded-[6px] border border-border/50 bg-background/70 px-3 py-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-                    <span className="block min-w-0 truncate text-xs text-muted-foreground" dir="ltr" title={source ? source.sourceUrl : sourceLabel(sourceKey, lang)}>
-                      {source ? source.sourceUrl : `${sourceLabel(sourceKey, lang)}: ${COPY[lang].labels.noSource}`}
+                    <span className="block min-w-0 text-xs text-muted-foreground" title={source?.sourceUrl ?? sourceLabel(sourceKey, lang)}>
+                      <span className="block font-semibold text-foreground">
+                        {sourceLabel(sourceKey, lang)}
+                      </span>
+                      <span className="mizan-text-safe mt-0.5 block text-[0.68rem]" dir="ltr">
+                        {source ? sourceHost(source) ?? source.sourceUrl : COPY[lang].labels.noSource}
+                      </span>
                     </span>
                     <EvidenceLinks source={source} appHref="/transparency" lang={lang} />
                   </div>
@@ -1106,13 +1120,19 @@ function MizanRenderer({
         <InvestmentSimulatorBlock props={props} investmentDefaults={investmentDefaults} lang={lang} />
       ),
       MetricStripBlock: ({ props }) => (
-        <MetricStripBlock {...props} />
+        <div className="min-w-0 xl:col-span-12">
+          <MetricStripBlock {...props} />
+        </div>
       ),
       RankingTableBlock: ({ props }) => (
-        <RankingTableBlock {...props} />
+        <div className="min-w-0 xl:col-span-12">
+          <RankingTableBlock {...props} />
+        </div>
       ),
       TimelineFeedBlock: ({ props }) => (
-        <TimelineFeedBlock {...props} />
+        <div className="min-w-0 xl:col-span-12">
+          <TimelineFeedBlock {...props} />
+        </div>
       ),
       Suggestions: ({ props }) => (
         <div className="mt-5 flex flex-wrap gap-2 border-t border-border/60 pt-4">
@@ -1122,7 +1142,7 @@ function MizanRenderer({
               type="button"
               onClick={() => onSuggestion(suggestion)}
               disabled={disabled}
-              className="rounded-[6px] border border-border/70 bg-background/80 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-primary disabled:pointer-events-none disabled:opacity-40"
+              className="min-h-10 rounded-[6px] border border-border/70 bg-background/80 px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-primary disabled:pointer-events-none disabled:opacity-40"
             >
               {suggestion}
             </button>
@@ -1172,7 +1192,7 @@ function ChatRail({
   }, [turns]);
 
   return (
-    <aside className="workbench-panel rounded-[8px] bg-card/90 p-3 animate-chat-rail lg:sticky lg:top-20 lg:h-[calc(100vh-6rem)]">
+    <aside className="workbench-panel max-h-[min(68vh,36rem)] min-w-0 rounded-[8px] bg-card/90 p-3 animate-chat-rail xl:sticky xl:top-20 xl:h-[calc(100vh-6rem)] xl:max-h-none">
       <div className="flex h-full flex-col gap-3">
         <div className="flex items-center justify-between gap-3 rounded-[6px] border border-border/70 bg-background/75 px-3 py-2">
           <div>
@@ -1183,14 +1203,14 @@ function ChatRail({
             type="button"
             onClick={onReset}
             disabled={disabled}
-            className="inline-flex items-center gap-1.5 rounded-[6px] border border-border/60 bg-card px-2.5 py-1.5 text-xs font-semibold text-muted-foreground hover:border-primary hover:text-primary disabled:pointer-events-none disabled:opacity-40"
+            className="inline-flex min-h-10 items-center gap-1.5 rounded-[6px] border border-border/60 bg-card px-3 py-2 text-xs font-semibold text-muted-foreground hover:border-primary hover:text-primary disabled:pointer-events-none disabled:opacity-40"
           >
             <RotateCcw size={12} />
             {copy.reset}
           </button>
         </div>
 
-        <div ref={scrollerRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto rounded-[8px] border border-border/70 bg-background/70 p-3">
+        <div ref={scrollerRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain rounded-[8px] border border-border/70 bg-background/70 p-3">
           {turns.map((turn) => {
             const status = turn.status === "running"
               ? copy.working
@@ -1219,7 +1239,7 @@ function ChatRail({
                           data-chat-suggestion
                           onClick={() => onSuggestion(suggestion)}
                           disabled={disabled}
-                          className="inline-flex items-center gap-1.5 rounded-[6px] border border-border/70 bg-background/80 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-primary disabled:pointer-events-none disabled:opacity-40"
+                          className="inline-flex min-h-10 items-center gap-1.5 rounded-[6px] border border-border/70 bg-background/80 px-2.5 py-2 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-primary disabled:pointer-events-none disabled:opacity-40"
                         >
                           <MessageSquareText size={12} />
                           {suggestion}
@@ -1246,9 +1266,9 @@ function ChatRail({
             onChange={(event) => onInput(event.target.value)}
             placeholder={copy.placeholder}
             disabled={disabled}
-            className="min-h-10 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
+            className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
           />
-          <button type="submit" className="inline-flex h-10 w-10 items-center justify-center rounded-[6px] border border-primary bg-primary text-primary-foreground disabled:pointer-events-none disabled:opacity-40" disabled={disabled || !input.trim()}>
+          <button type="submit" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[6px] border border-primary bg-primary text-primary-foreground disabled:pointer-events-none disabled:opacity-40" disabled={disabled || !input.trim()}>
             <ArrowUp size={16} />
           </button>
         </form>
@@ -1564,7 +1584,7 @@ export default function HomePage() {
         <div className="mx-auto mb-5 max-w-7xl">
           <NewsTicker />
         </div>
-        <div className={cn("mx-auto grid max-w-7xl gap-6", activeTurn ? "lg:grid-cols-[340px_minmax(0,1fr)]" : "grid-cols-1")}>
+        <div className={cn("mx-auto grid max-w-7xl gap-5 lg:gap-6", activeTurn ? "xl:grid-cols-[minmax(300px,360px)_minmax(0,1fr)]" : "grid-cols-1")}>
           {activeTurn && (
             <ChatRail
               turns={turns}
@@ -1578,7 +1598,7 @@ export default function HomePage() {
             />
           )}
 
-          <main className="min-w-0">
+          <main className="min-w-0 overflow-x-clip">
             {activeTurn && (
               <div className="mb-5 text-start">
                 <h1 className="text-3xl font-black leading-tight">{COPY[lang].title}</h1>

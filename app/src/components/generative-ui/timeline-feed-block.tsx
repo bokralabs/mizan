@@ -46,15 +46,15 @@ export function TimelineFeedBlock({
           return (
             <article
               key={signal.id}
-              className="workbench-tile grid gap-3 rounded-[9px] border border-border/70 bg-background/60 p-3 lg:grid-cols-[128px_1fr]"
+              className="workbench-tile grid min-w-0 gap-3 rounded-[9px] border border-border/70 bg-background/60 p-3 lg:grid-cols-[minmax(0,128px)_minmax(0,1fr)]"
             >
               <div className="flex flex-wrap items-center gap-2 lg:block lg:space-y-2">
                 <Badge
                   variant="outline"
-                  className={cn("gap-1.5 whitespace-nowrap rounded-[6px] px-2 py-1 text-[0.68rem]", impact.className)}
+                  className={cn("min-h-8 max-w-full gap-1.5 rounded-[6px] px-2 py-1 text-[0.68rem]", impact.className)}
                 >
                   <Icon className="size-3" />
-                  {impact.label}
+                  <span className="mizan-text-safe min-w-0">{impact.label}</span>
                 </Badge>
                 <div className="inline-flex items-center gap-2 text-xs text-muted-foreground">
                   <CalendarClock className="size-3.5 text-primary" />
@@ -64,7 +64,7 @@ export function TimelineFeedBlock({
 
               <div className="min-w-0 space-y-2">
                 <div className="grid min-w-0 gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-                  <h3 className="min-w-0 text-base font-semibold leading-6 text-foreground">
+                  <h3 className="mizan-text-safe min-w-0 text-base font-semibold leading-6 text-foreground">
                     {signal.label}
                   </h3>
                   {source ? (
@@ -72,14 +72,14 @@ export function TimelineFeedBlock({
                       href={source.url}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex min-w-0 items-center justify-self-start rounded-[6px] border border-primary/40 bg-primary/10 px-2 py-1 text-xs leading-4 text-primary hover:underline lg:justify-self-end"
+                      className="inline-flex min-h-9 max-w-full min-w-0 items-center justify-self-start rounded-[6px] border border-primary/40 bg-primary/10 px-2.5 py-1.5 text-xs leading-4 text-primary hover:underline lg:justify-self-end"
                     >
-                      <span className="min-w-0 break-words">{source.label}</span>
+                      <span className="mizan-text-safe min-w-0">{source.label}</span>
                     </a>
                   ) : null}
                 </div>
 
-                <p className="text-xs leading-5 text-muted-foreground">
+                <p className="mizan-text-safe text-xs leading-5 text-muted-foreground">
                   {signal.summary}
                 </p>
 
@@ -87,7 +87,7 @@ export function TimelineFeedBlock({
                   {signal.evidence.map((item) => (
                     <span
                       key={item}
-                      className="rounded-[6px] border border-border/70 bg-muted/70 px-2 py-1 text-[0.68rem] text-muted-foreground"
+                      className="mizan-text-safe rounded-[6px] border border-border/70 bg-muted/70 px-2 py-1 text-[0.68rem] text-muted-foreground"
                     >
                       {item}
                     </span>

@@ -194,8 +194,9 @@ html[dir="ltr"] { font-family: var(--font-body); line-height: 1.65; }
 .container-page {
   max-width: var(--max-width);
   margin: 0 auto;
-  padding-inline: 1.5rem;
+  padding-inline: 1rem;
 }
+@media (min-width: 640px) { .container-page { padding-inline: 1.5rem; } }
 @media (min-width: 1024px) { .container-page { padding-inline: 2rem; } }
 
 .page-content {
@@ -318,6 +319,21 @@ html[dir="ltr"] { font-family: var(--font-body); line-height: 1.65; }
 
 .mizan-workbench .metric-strip-shell {
   container-type: inline-size;
+}
+
+.mizan-workbench .mizan-generated-grid {
+  container-type: inline-size;
+}
+
+.mizan-workbench .mizan-generated-grid > *,
+.mizan-workbench .workbench-panel,
+.mizan-workbench .workbench-tile {
+  min-width: 0;
+}
+
+.mizan-workbench .mizan-text-safe {
+  overflow-wrap: anywhere;
+  word-break: normal;
 }
 
 .mizan-workbench .metric-strip-grid {

@@ -16,14 +16,14 @@ function DeltaBadge({ delta }: { delta: MetricDelta }) {
     <Badge
       variant="outline"
       className={cn(
-        "gap-1.5 rounded-[6px] px-2 py-1 text-[11px]",
+        "min-h-8 max-w-full gap-1.5 rounded-[6px] px-2 py-1 text-[11px]",
         delta.direction === "up" && "border-emerald-600/40 bg-emerald-500/10 text-emerald-700",
         delta.direction === "down" && "border-rose-600/40 bg-rose-500/10 text-rose-700",
         delta.direction === "flat" && "border-border/70 bg-muted/30 text-muted-foreground",
       )}
     >
       <Icon className="size-3" />
-      {delta.label}
+      <span className="mizan-text-safe min-w-0">{delta.label}</span>
     </Badge>
   );
 }
@@ -59,10 +59,10 @@ export function MetricStripBlock({
             >
               <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="text-xs font-medium leading-5 text-muted-foreground">
+                  <p className="mizan-text-safe text-xs font-medium leading-5 text-muted-foreground">
                     {metric.label}
                   </p>
-                  <p className="mt-2 break-words font-mono text-2xl font-semibold leading-none text-foreground data-number">
+                  <p className="mizan-text-safe mt-2 font-mono text-2xl font-semibold leading-none text-foreground data-number">
                     {metric.value}
                   </p>
                 </div>
@@ -70,18 +70,18 @@ export function MetricStripBlock({
               </div>
 
               {metric.detail ? (
-                <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                <p className="mizan-text-safe mt-3 text-xs leading-5 text-muted-foreground">
                   {metric.detail}
                 </p>
               ) : null}
 
               {source ? (
                 <div className="mt-4 flex min-w-0 flex-wrap items-center gap-1.5 text-[0.68rem] text-muted-foreground">
-                  <span className="min-w-0 break-words font-medium text-foreground">
+                  <span className="mizan-text-safe min-w-0 font-medium text-foreground">
                     {source.label}
                   </span>
                   <ArrowRight className="size-3 text-primary" />
-                  <span className="min-w-0 break-words">{source.publisher ?? source.confidence}</span>
+                  <span className="mizan-text-safe min-w-0">{source.publisher ?? source.confidence}</span>
                 </div>
               ) : null}
             </article>

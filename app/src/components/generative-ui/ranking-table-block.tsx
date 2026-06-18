@@ -26,22 +26,22 @@ function TrendCell({ trend }: { trend?: MetricDelta }) {
   return (
     <div
       className={cn(
-        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-[6px] border px-2 py-1 text-xs",
+        "inline-flex min-h-8 max-w-full flex-wrap items-center gap-1.5 rounded-[6px] border px-2 py-1 text-xs",
         trend.direction === "up" && "border-emerald-600/40 bg-emerald-500/10 text-emerald-700",
         trend.direction === "down" && "border-rose-600/40 bg-rose-500/10 text-rose-700",
         trend.direction === "flat" && "border-border/70 bg-muted/30 text-muted-foreground",
       )}
     >
       <Icon className="size-3" />
-      <span>{trend.label}</span>
+      <span className="mizan-text-safe min-w-0">{trend.label}</span>
     </div>
   );
 }
 
 function ScoreDisplay({ value, score }: { value: string; score: number }) {
   return (
-    <div className="space-y-2">
-      <div className="font-mono text-base font-semibold text-foreground data-number">
+    <div className="min-w-0 space-y-2">
+      <div className="mizan-text-safe font-mono text-base font-semibold text-foreground data-number">
         {value}
       </div>
       <div className="h-2 overflow-hidden rounded-[3px] bg-muted/70">
@@ -68,9 +68,9 @@ function SourceLink({
       href={source.url}
       target="_blank"
       rel="noreferrer"
-      className="inline-flex min-w-0 items-center gap-1.5 text-sm leading-5 text-primary hover:underline"
+      className="inline-flex min-h-9 max-w-full min-w-0 items-center gap-1.5 text-sm leading-5 text-primary hover:underline"
     >
-      <span className="min-w-0 break-words">{source.label}</span>
+      <span className="mizan-text-safe min-w-0">{source.label}</span>
       <ArrowUpRight className="size-3.5 shrink-0" />
     </a>
   );
@@ -93,7 +93,7 @@ export function RankingTableBlock({
       footerNote={footerNote}
     >
       <div className="workbench-tile overflow-hidden rounded-[9px] border border-border/70 bg-background/60">
-        <div className="grid gap-2 p-2 md:hidden">
+        <div className="grid gap-2 p-2 lg:hidden">
           {rows.map((row, index) => {
             const source = getSourceById(sources, row.sourceId);
 
@@ -107,9 +107,9 @@ export function RankingTableBlock({
                     {String(index + 1).padStart(2, "0")}
                   </div>
                   <div className="min-w-0 flex-1 space-y-1">
-                    <p className="text-sm font-semibold leading-5 text-foreground">{row.label}</p>
+                    <p className="mizan-text-safe text-sm font-semibold leading-5 text-foreground">{row.label}</p>
                     {row.context ? (
-                      <p className="text-xs leading-5 text-muted-foreground">{row.context}</p>
+                      <p className="mizan-text-safe text-xs leading-5 text-muted-foreground">{row.context}</p>
                     ) : null}
                   </div>
                 </div>
@@ -132,7 +132,7 @@ export function RankingTableBlock({
           })}
         </div>
 
-        <div className="hidden md:block">
+        <div className="hidden lg:block">
         <Table className="table-fixed">
           <colgroup>
             <col className="w-[52%]" />
@@ -168,9 +168,9 @@ export function RankingTableBlock({
                         {String(index + 1).padStart(2, "0")}
                       </div>
                       <div className="min-w-0 space-y-1">
-                        <p className="text-sm font-semibold leading-5 text-foreground">{row.label}</p>
+                        <p className="mizan-text-safe text-sm font-semibold leading-5 text-foreground">{row.label}</p>
                         {row.context ? (
-                          <p className="max-w-[34rem] text-xs leading-5 text-muted-foreground">
+                          <p className="mizan-text-safe max-w-[34rem] text-xs leading-5 text-muted-foreground">
                             {row.context}
                           </p>
                         ) : null}
@@ -180,7 +180,7 @@ export function RankingTableBlock({
                   <TableCell className="whitespace-normal px-4 py-4 align-top">
                     <ScoreDisplay value={row.value} score={row.score} />
                   </TableCell>
-                  <TableCell className="px-4 py-4 align-top">
+                  <TableCell className="whitespace-normal px-4 py-4 align-top">
                     <TrendCell trend={row.trend} />
                   </TableCell>
                   <TableCell className="whitespace-normal px-4 py-4 align-top">

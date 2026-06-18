@@ -35,12 +35,12 @@ export function BlockFrame({
   return (
     <Card
       className={cn(
-        "workbench-panel gap-0 overflow-hidden rounded-[9px] border-border/70 bg-card py-0 shadow-none",
+        "workbench-panel min-w-0 gap-0 overflow-hidden rounded-[9px] border-border/70 bg-card py-0 shadow-none",
         className,
       )}
     >
-      <CardHeader className="relative gap-3 border-b border-border/80 bg-background/70 px-4 py-4">
-        <div className="relative flex flex-col gap-3">
+      <CardHeader className="relative min-w-0 gap-3 border-b border-border/80 bg-background/70 px-4 py-4">
+        <div className="relative flex min-w-0 flex-col gap-3">
           {eyebrow ? (
             <Badge
               variant="outline"
@@ -49,19 +49,19 @@ export function BlockFrame({
               {eyebrow}
             </Badge>
           ) : null}
-          <div className="space-y-2">
-            <CardTitle className="text-xl leading-tight text-foreground">
+          <div className="min-w-0 space-y-2">
+            <CardTitle className="mizan-text-safe text-xl leading-tight text-foreground">
               {heading}
             </CardTitle>
-            <p className="max-w-3xl text-xs leading-5 text-muted-foreground">
+            <p className="mizan-text-safe max-w-3xl text-xs leading-5 text-muted-foreground">
               {summary}
             </p>
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4 bg-card px-4 py-4">{children}</CardContent>
+      <CardContent className="min-w-0 space-y-4 bg-card px-4 py-4">{children}</CardContent>
       {footerNote ? (
-        <div className="border-t border-border/80 bg-background/55 px-4 py-3 text-xs leading-5 text-muted-foreground">
+        <div className="mizan-text-safe border-t border-border/80 bg-background/55 px-4 py-3 text-xs leading-5 text-muted-foreground">
           {footerNote}
         </div>
       ) : null}
@@ -75,14 +75,14 @@ export function SourcePill({ source }: { source: BlockSource }) {
       href={source.url}
       target="_blank"
       rel="noreferrer"
-      className="group inline-flex items-center gap-2 rounded-[6px] border border-border/70 bg-background/70 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+      className="group inline-flex min-h-10 max-w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-[6px] border border-border/70 bg-background/70 px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
     >
-      <span className="font-medium text-foreground">{source.label}</span>
+      <span className="mizan-text-safe min-w-0 font-medium text-foreground">{source.label}</span>
       <span className="text-muted-foreground/70">·</span>
-      <span>{source.publisher ?? confidenceLabel[source.confidence]}</span>
+      <span className="mizan-text-safe min-w-0">{source.publisher ?? confidenceLabel[source.confidence]}</span>
       <span
         className={cn(
-          "rounded-[4px] border px-1.5 py-0.5 text-[10px] uppercase",
+          "shrink-0 rounded-[4px] border px-1.5 py-0.5 text-[10px] uppercase",
           confidenceClassName[source.confidence],
         )}
       >
@@ -94,7 +94,7 @@ export function SourcePill({ source }: { source: BlockSource }) {
 
 export function SourceRail({ sources }: { sources: Array<BlockSource> }) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex min-w-0 flex-wrap gap-2">
       {sources.map((source) => (
         <SourcePill key={source.id} source={source} />
       ))}

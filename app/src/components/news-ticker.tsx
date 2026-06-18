@@ -93,7 +93,7 @@ export function NewsTicker() {
       return (
         <span key={`dup-${headline.url}-${index}`} className="inline-flex h-full shrink-0 items-center whitespace-nowrap" aria-hidden="true">
           {content}
-          <span className="ms-1 inline-flex size-6 shrink-0" />
+          <span className="ms-1 inline-flex size-10 shrink-0" />
         </span>
       );
     }
@@ -104,7 +104,7 @@ export function NewsTicker() {
           href={headline.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex min-w-0 items-center text-start text-foreground no-underline outline-none transition-colors hover:text-primary focus-visible:text-primary"
+          className="inline-flex min-h-10 min-w-0 items-center text-start text-foreground no-underline outline-none transition-colors hover:text-primary focus-visible:text-primary"
         >
           {content}
         </a>
@@ -113,7 +113,7 @@ export function NewsTicker() {
           target="_blank"
           rel="noopener noreferrer"
           aria-label={`${copy.open}: ${headline.title}`}
-          className="ms-1 inline-flex size-6 shrink-0 items-center justify-center rounded-[5px] text-muted-foreground opacity-60 no-underline transition-colors hover:bg-primary/10 hover:text-primary hover:opacity-100 focus-visible:bg-primary/10 focus-visible:text-primary focus-visible:opacity-100"
+          className="ms-1 inline-flex size-10 shrink-0 items-center justify-center rounded-[5px] text-muted-foreground opacity-60 no-underline transition-colors hover:bg-primary/10 hover:text-primary hover:opacity-100 focus-visible:bg-primary/10 focus-visible:text-primary focus-visible:opacity-100"
         >
           <ExternalLink size={12} />
         </a>
@@ -134,7 +134,7 @@ export function NewsTicker() {
 
   return (
     <section className="rounded-[8px] border border-border/70 bg-card/75">
-      <div className="flex h-10 items-center gap-3 overflow-hidden px-3">
+      <div className="flex min-h-12 items-center gap-3 overflow-hidden px-3">
         <div className="inline-flex shrink-0 items-center gap-2 text-primary">
           <Newspaper size={14} />
           <span className="workbench-label">{t.newsTicker_title ?? copy.channel}</span>
